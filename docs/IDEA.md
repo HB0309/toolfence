@@ -71,7 +71,9 @@ runs in CI and from inside Bob, and ships a drop-in guard with an end-user confi
 - Fetched by the same setup script at a pinned commit (`948ce38`, main as of 2026-10-04) into
   `targets/nanobot/`, git-ignored. Our changes live as **patch files** in `targets/nanobot-patches/`.
   The patches are our own change; an upstream pull request is not required.
-- Verified integration points at that commit (Bob should re-confirm before designing):
+- Integration points found by reading the code at that commit (not by running it). Bob's nanobot
+  notes (`docs/notes/nanobot-map.md`) re-check each one; where they differ, the team checks the code
+  and the corrected note replaces this table:
 
 | Where | What it is | What ToolFence needs |
 |---|---|---|
@@ -166,7 +168,9 @@ call's action class (from `surface.json`) and where the call's values and contex
 - **Labels follow files:** when nanobot saves a large result to a workspace file, Guard records that
   path with the result's label; a later `read_file` of that path inherits the label.
 - **When a card is shown (the decided rule):**
-  1. **Irreversible actions always ask** (in Galaxium: cancel a booking).
+  1. **Irreversible actions always ask** (in Galaxium: cancel a booking, the final booking-confirm
+     route, and every `/internal/` route). The agent's tasks never need the last two; they are
+     classed irreversible anyway so that, if they are still exposed, Guard asks instead of passing.
   2. **A state-changing call in a tainted turn asks.** A turn is tainted once it has read any
      untrusted content. This covers the case where every argument is trusted but the decision was
      steered (for example, cancelling the user's own booking ID after reading reviews).
@@ -190,6 +194,8 @@ call's action class (from `surface.json`) and where the call's values and contex
 - **CI:** a GitHub Action that runs on every pull request with no model and no network:
   1. **Surface diff:** fails if a tool appears that is not in `surface.json`, a tool's action class
      rises, or a tool description's hash changes. Passing means a person reviewed and labelled it.
+     A failing check changes nothing by itself; a person updates `surface.json` and the check re-runs.
+     This is consistent with 4.1: ToolFence blocks a merge, it never applies a fix.
   2. **Guard wiring tests:** every state-changing tool still routes through Guard.
   3. **PR comment** with the numbers (tools exposed, card coverage).
   The full model-based evaluation runs on demand, not in CI.
@@ -199,7 +205,9 @@ call's action class (from `surface.json`) and where the call's values and contex
 ### 4.5 Proving ground (nanobot on Galaxium)
 - **Agent:** nanobot at the pinned commit, connected to Galaxium's MCP server, doing traveller tasks:
   search flights, read reviews, quote, hold, release a hold, view own bookings, cancel behind a card.
-  It never calls the final booking-confirm or internal routes.
+  Its tasks never need the final booking-confirm or `/internal/` routes. In the baseline run they
+  are still exposed (a finding); the narrowing fix removes them from the agent's tool list; and
+  Guard classes them irreversible (4.3), so they ask if reached.
 - **Model:** IBM Granite 4.1 8B (`ibm-granite/granite-4.1-8b`) through OpenRouter, using nanobot's
   built-in OpenRouter provider. One model for the whole team, so every teammate's numbers line up.
   Pin one OpenRouter upstream host (provider `order` with `allow_fallbacks: false`) and record the
@@ -209,7 +217,9 @@ call's action class (from `surface.json`) and where the call's values and contex
   to a Groq-hosted model through nanobot's built-in Groq provider. That is a config change only, so
   nothing is built for it in advance.
 - **Confirm-card channel:** nanobot's WebUI if it renders `buttons`; otherwise Telegram for the live
-  demo and video, with the card shown on the public dashboard as a replay.
+  demo and video, with the card shown on the public dashboard as a replay. Only the channel waits on
+  open check 2. The card's content, the rule and the confirm flow (4.3) are decided and do not depend
+  on the channel: Guard emits a held-call event, and a small channel adapter displays it.
 - **The fixes ToolFence proposes (the "Fix"):**
   - Narrow the tools nanobot sees to what a traveller task needs (via nanobot's per-server
     `enabled_tools`, generated from `surface.json`), with before/after numbers.
@@ -273,6 +283,11 @@ only, if the core is done early).
   - **B, targets + Bob:** nanobot on Galaxium, the patches, the reviews change, Auditor mode, MCP
     server, skill.
   - **C, product:** Guard (labels, rule, confirm flow, card), CLI, dashboard, CI, IBM Cloud deploy.
+- **Guard boundary between B and C:** C owns Guard's logic as plain Python with no nanobot imports
+  (labels, provenance, the card rule, the grant), behind the Guard decision interface in the shared
+  contracts. B owns everything inside nanobot that calls that interface (the proxy wrapper or the
+  `execution.py` patch, registration, the card channel adapter). Neither edits the other's side; a
+  change to the interface itself needs both B and C to approve.
 - Submission deadline: Oct 18, 11:59 PM ET. The team sets its own schedule.
 
 ## 9. Open checks (answer before designing)
