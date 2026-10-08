@@ -200,11 +200,14 @@ call's action class (from `surface.json`) and where the call's values and contex
 - **Agent:** nanobot at the pinned commit, connected to Galaxium's MCP server, doing traveller tasks:
   search flights, read reviews, quote, hold, release a hold, view own bookings, cancel behind a card.
   It never calls the final booking-confirm or internal routes.
-- **Model:** IBM Granite as the main model, served through an OpenAI-compatible endpoint (first choice:
-  a local Ollama Granite model; alternative: watsonx through a compatible proxy). **Gate:** 10 clean,
-  attack-free runs of the booking task must complete correctly at least 8 times. If Granite misses the
-  gate, a stronger model (Groq-hosted) runs the measured evaluation and Granite is reported as a
-  second row.
+- **Model:** IBM Granite 4.1 8B (`ibm-granite/granite-4.1-8b`) through OpenRouter, using nanobot's
+  built-in OpenRouter provider. One model for the whole team, so every teammate's numbers line up.
+  Pin one OpenRouter upstream host (provider `order` with `allow_fallbacks: false`) and record the
+  model ID and host with every result. No local model. **Gate:** 10 clean, attack-free runs of the
+  booking task must complete correctly at least 8 times.
+- **Fallback (planned, not wired):** if Granite misses the gate or OpenRouter is unavailable, switch
+  to a Groq-hosted model through nanobot's built-in Groq provider. That is a config change only, so
+  nothing is built for it in advance.
 - **Confirm-card channel:** nanobot's WebUI if it renders `buttons`; otherwise Telegram for the live
   demo and video, with the card shown on the public dashboard as a replay.
 - **The fixes ToolFence proposes (the "Fix"):**
@@ -230,7 +233,7 @@ call's action class (from `surface.json`) and where the call's values and contex
 | **Guard confirm cards** | End user (traveller) | nanobot's chat channel | "This came after reading reviews — Allow / Decline" |
 | **CI check** | Developer | GitHub pull requests | Pass/fail with the surface diff and card coverage |
 
-**Live run vs replay.** A real run calls the model and needs a key or a local model, so it runs only
+**Live run vs replay.** A real run calls the model and needs an OpenRouter key, so it runs only
 locally or in the demo video. The public dashboard **replays a recorded run** step by step: it looks
 live, costs nothing, and exposes no key.
 
@@ -250,7 +253,8 @@ live, costs nothing, and exposes no key.
 ## 6. Technical constraints
 
 - Python 3.12 for the engine and Guard (check nanobot's supported Python version first).
-- watsonx/Ollama Granite as the main model; one Groq-hosted model as the fallback and second row.
+- Granite 4.1 8B via OpenRouter as the only wired model. Groq is a documented fallback, not wired.
+  The OpenRouter key lives in `.env`; set a spending limit on the key.
 - Hosting: IBM Cloud Code Engine for the Galaxium target and the dashboard.
 - Tests: pytest, with a scripted (no-network) agent adapter so tests cost nothing and run in CI.
 - Windows development machines; Docker is not assumed.
@@ -276,8 +280,8 @@ only, if the core is done early).
 1. Can a guarded proxy wrap nanobot tools at registration without editing core files, or is the
    `execution.py` patch needed?
 2. Does nanobot's WebUI render `OutboundMessage.buttons`, and how does a button press come back?
-3. Can nanobot use a Granite model through its OpenAI-compatible provider, and does it pass the
-   8-of-10 gate on the booking task?
+3. Does nanobot's OpenRouter provider call Granite 4.1 8B with tools correctly, can it pin one
+   upstream host, and does it pass the 8-of-10 gate on the booking task?
 4. How are sub-agents and dream turns switched off (config, or a one-line patch)?
 5. Which Python version does nanobot support at the pinned commit?
 
