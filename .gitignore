@@ -2,3 +2,4 @@
 .venv/
 .env
 targets/galaxium/
+targets/nanobot/
