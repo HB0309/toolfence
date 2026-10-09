@@ -224,7 +224,7 @@ Inbound path (button press): [`channels/telegram/runtime.py:2211-2244`](../../ta
 {
   "agents": {
     "defaults": {
-      "model": "ibm-granite/granite-4.1-8b",
+      "model": "ibm-granite/granite-4.2-8b",
       "provider": "openrouter",
       "dream": { "enabled": false }
     }
@@ -233,10 +233,8 @@ Inbound path (button press): [`channels/telegram/runtime.py:2211-2244`](../../ta
     "openrouter": {
       "apiKey": "${OPENROUTER_API_KEY}",
       "extraBody": {
-        "provider": {
-          "order": ["<OpenRouter host>"],
-          "allow_fallbacks": false
-        }
+        "provider": { "order": ["DeepInfra"], "allow_fallbacks": false },
+        "reasoning": { "effort": "none" }
       }
     }
   }
@@ -245,7 +243,9 @@ Inbound path (button press): [`channels/telegram/runtime.py:2211-2244`](../../ta
 
 **API key from environment:** yes — [`config/loader.py:226`](../../targets/nanobot/nanobot/config/loader.py:226) resolves `${VAR}` references at load time. Documented in [`docs/providers.md:99`](../../targets/nanobot/docs/providers.md:99).
 
-**Extra request fields (upstream host pinning):** [`config/schema.py:206`](../../targets/nanobot/nanobot/config/schema.py:206) — `extra_body: dict[str, Any] | None = None` on `ProviderConfig`. The `extraBody.provider.order` array takes the exact host string from OpenRouter's provider routing — replace `"<OpenRouter host>"` with the real value when known.
+**Extra request fields (upstream host pinning):** [`config/schema.py:206`](../../targets/nanobot/nanobot/config/schema.py:206) — `extra_body: dict[str, Any] | None = None` on `ProviderConfig`. The `extraBody.provider.order` array takes the exact host string from OpenRouter's provider routing — here `"DeepInfra"`.
+
+**Reasoning:** nanobot does not send reasoning settings for Granite (it only does this for Kimi, MiMo and Qwen; openai_compat_provider.py:1039, :1055), so we set it ourselves in extraBody: "reasoning": {"effort": "none"}. The spike checks that reasoning tokens are 0. To try thinking, change "none" to "low" there.
 
 ---
 
