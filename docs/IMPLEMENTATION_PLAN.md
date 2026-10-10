@@ -428,7 +428,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### S-1 Skeleton and pyproject — shared base
-**Track:** All · **Depends on:** — · **Status:** [ ] pending
+**Track:** All · **Depends on:** — · **Status:** [x] done
 
 **Intent:** Create the `toolfence` package with entry point, stub sub-packages, and a CI-ready `pyproject.toml`. Every subsequent task imports from here without restructuring.
 
@@ -446,7 +446,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### S-2 Contracts and JSON Schemas — shared base
-**Track:** All · **Depends on:** S-1 · **Status:** [ ] pending
+**Track:** All · **Depends on:** S-1 · **Status:** [x] done
 
 **Intent:** Define the four contracts as Pydantic models and generated JSON Schemas in `toolfence/contracts/`. No later task redefines a shape.
 
@@ -466,7 +466,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### S-3 Spike-trace fixtures — shared base
-**Track:** All · **Depends on:** S-2 · **Status:** [ ] pending
+**Track:** All · **Depends on:** S-2 · **Status:** [x] done
 
 **Intent:** Convert the 10 spike traces to evaluation trace format, validate all 10 converted files, and confirm the original spike files still load (but do not validate them against the new schema — they predate it). Spike runs are clean booking-task passes stored as `kind: "normal"` trial records with `task_success: true`.
 
@@ -483,7 +483,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### S-4 Scripted adapter — shared base
-**Track:** All · **Depends on:** S-2, S-3 · **Status:** [ ] pending
+**Track:** All · **Depends on:** S-2, S-3 · **Status:** [x] done
 
 **Intent:** Implement `ScriptedAdapter` and the `adapter_contract` test parametrization. This is the only adapter used in CI and all unit tests.
 

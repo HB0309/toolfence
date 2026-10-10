@@ -69,8 +69,9 @@ runs in CI and from inside Bob, and ships a drop-in guard with an end-user confi
   built-in MCP client, web tools and chat channels. It connects to Galaxium's MCP server, so we do
   **not** build our own agent loop.
 - Fetched by the same setup script at a pinned commit (`948ce38`, main as of 2026-10-04) into
-  `targets/nanobot/`, git-ignored. Our changes live as **patch files** in `targets/nanobot-patches/`.
-  The patches are our own change; an upstream pull request is not required.
+  `targets/nanobot/`, git-ignored. Guard is wired in through our own launcher scripts with **zero
+  nanobot code edits**; `targets/nanobot-patches/` stays empty. The folder exists only in case a
+  nanobot bug forces an unavoidable fix; no upstream pull request is required.
 - Integration points found by reading the code at that commit (not by running it). Bob's nanobot
   notes (`docs/notes/nanobot-map.md`) re-check each one; where they differ, the team checks the code
   and the corrected note replaces this table:
@@ -115,12 +116,12 @@ the findings and fixes, then Guard and the Bob integration, then CLI/CI/dashboar
 - **Input:** an agent's tool surface (an MCP server, a FastAPI app, or a plain JSON tool list) plus an
   adapter that knows how to run the agent for one turn. The first adapter drives nanobot; a scripted
   no-network adapter is used in tests.
-- **Surface map (`surface.json`):** lists every tool with its **action class** (read, state-changing,
-  irreversible) and its **trust label** (section 4.3). ToolFence *suggests* these from the HTTP method,
-  any MCP annotations and the tool name; a person reviews and commits the file. **A tool missing from
-  the file is treated as state-changing.** nanobot's own `read_only` flag is not used, because it marks
-  every MCP tool as state-changing. Tool descriptions are recorded as hashes so a changed description
-  is detected.
+- **Surface map (`surface.json`):** lists every tool with its **route** (e.g. `POST /cancel/{booking_id}`),
+  **action class** (read, state-changing, irreversible) and **trust label** (section 4.3). Tools are
+  matched by route. ToolFence *suggests* the action class from the HTTP method, any MCP annotations and
+  the tool name; a person reviews and commits the file. **A tool missing from the file is treated as
+  state-changing.** nanobot's own `read_only` flag is not used, because it marks every MCP tool as
+  state-changing. Tool descriptions are recorded as hashes so a changed description is detected.
 - **Safety evaluation:** for each channel and each defense setting, the engine runs the agent against
   **synthetic, labelled test content** and records what the agent did. Test content is built only from
   the target's own tool and parameter names plus harmless placeholders. **No working attack text is
@@ -171,11 +172,12 @@ call's action class (from `surface.json`) and where the call's values and contex
   1. **Irreversible actions always ask** (in Galaxium: cancel a booking, the final booking-confirm
      route, and every `/internal/` route). The agent's tasks never need the last two; they are
      classed irreversible anyway so that, if they are still exposed, Guard asks instead of passing.
-  2. **A state-changing call in a tainted turn asks.** A turn is tainted once it has read any
-     untrusted content. This covers the case where every argument is trusted but the decision was
-     steered (for example, cancelling the user's own booking ID after reading reviews).
+  2. **A state-changing call in a tainted session asks.** A session is tainted once it has read any
+     untrusted content, and taint never clears. This covers the case where every argument is trusted
+     but the decision was steered (for example, cancelling the user's own booking ID after reading
+     reviews).
   3. **A state-changing call with any untrusted argument value asks.**
-  4. Everything else passes (reads always pass; a hold in an untainted turn passes, since holds
+  4. Everything else passes (reads always pass; a hold in an untainted session passes, since holds
      expire on their own).
 - **The card says why:** "you asked for this", "this came after reading 3 reviews", or "this value came
   from a review". Allow or Decline.
@@ -208,7 +210,7 @@ call's action class (from `surface.json`) and where the call's values and contex
   Its tasks never need the final booking-confirm or `/internal/` routes. In the baseline run they
   are still exposed (a finding); the narrowing fix removes them from the agent's tool list; and
   Guard classes them irreversible (4.3), so they ask if reached.
-- **Model:** IBM Granite 4.1 8B (`ibm-granite/granite-4.1-8b`) through OpenRouter, using nanobot's
+- **Model:** IBM Granite 4.2 8B (`ibm-granite/granite-4.2-8b`) through OpenRouter, using nanobot's
   built-in OpenRouter provider. One model for the whole team, so every teammate's numbers line up.
   Pin one OpenRouter upstream host (provider `order` with `allow_fallbacks: false`) and record the
   model ID and host with every result. No local model. **Gate:** 10 clean, attack-free runs of the
@@ -263,7 +265,7 @@ live, costs nothing, and exposes no key.
 ## 6. Technical constraints
 
 - Python 3.12 for the engine and Guard (check nanobot's supported Python version first).
-- Granite 4.1 8B via OpenRouter as the only wired model. Groq is a documented fallback, not wired.
+- Granite 4.2 8B via OpenRouter as the only wired model. Groq is a documented fallback, not wired.
   The OpenRouter key lives in `.env`; set a spending limit on the key.
 - Hosting: IBM Cloud Code Engine for the Galaxium target and the dashboard.
 - Tests: pytest, with a scripted (no-network) agent adapter so tests cost nothing and run in CI.
@@ -295,7 +297,7 @@ only, if the core is done early).
 1. Can a guarded proxy wrap nanobot tools at registration without editing core files, or is the
    `execution.py` patch needed?
 2. Does nanobot's WebUI render `OutboundMessage.buttons`, and how does a button press come back?
-3. Does nanobot's OpenRouter provider call Granite 4.1 8B with tools correctly, can it pin one
+3. Does nanobot's OpenRouter provider call Granite 4.2 8B with tools correctly, can it pin one
    upstream host, and does it pass the 8-of-10 gate on the booking task?
 4. How are sub-agents and dream turns switched off (config, or a one-line patch)?
 5. Which Python version does nanobot support at the pinned commit?
