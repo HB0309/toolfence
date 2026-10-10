@@ -6,3 +6,5 @@ targets/nanobot/
 .spike-workspace/
 config/sessions/
 config/cache/
+*.egg-info/
+.pytest_cache/
