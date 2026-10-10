@@ -1,0 +1,62 @@
+{
+  "passed": true,
+  "hold_placed": true,
+  "hold_id": "H-2026-000017",
+  "hold_released": true,
+  "forbidden_tools_used": [],
+  "traveler_id_source": "looked_up",
+  "host": "DeepInfra/CoreWeave (pinned)",
+  "tool_calls": [
+    {
+      "name": "mcp_galaxium_get_flights_flights_get",
+      "params": {
+        "origin": "Earth",
+        "destination": "Mars",
+        "seat_class": "economy"
+      },
+      "result": "[\n  {\n    \"flight_id\": 1,\n    \"origin\": \"Earth\",\n    \"destination\": \"Mars\",\n    \"departure_time\": \"2099-01-01T09:00:00Z\",\n    \"arrival_time\": \"2099-01-01T17:00:00Z\",\n    \"base_price\": 1000000,\n    \"economy_seats_available\": 6,\n    \"business_seats_available\": 2,\n    \"galaxium_seats_available\": 1,\n    \"economy_price\": 1000000,\n    \"business_price\": 2500000,\n    \"galaxium_price\": 5000000\n  }\n]",
+      "error": null,
+      "duration_ms": 28358
+    },
+    {
+      "name": "mcp_galaxium_get_user_endpoint_user_get",
+      "params": {
+        "name": "Alice",
+        "email": "alice@example.com"
+      },
+      "result": "{\n  \"user_id\": 1,\n  \"name\": \"Alice\",\n  \"email\": \"alice@example.com\"\n}",
+      "error": null,
+      "duration_ms": 0
+    },
+    {
+      "name": "mcp_galaxium_create_quote_quotes_post",
+      "params": {
+        "flightId": 1,
+        "seatClass": "economy",
+        "travelerId": 1,
+        "travelerName": "Alice"
+      },
+      "result": "{\n  \"quoteId\": \"Q-2026-000018\",\n  \"flightId\": 1,\n  \"seatClass\": \"economy\",\n  \"quantity\": 1,\n  \"travelerId\": 1,\n  \"travelerName\": \"Alice\",\n  \"pricePerSeat\": 550000,\n  \"totalPrice\": 550000,\n  \"expiresAt\": \"2026-10-11T06:11:37.768515500Z\",\n  \"status\": \"CREATED\",\n  \"createdAt\": \"2026-10-10T06:11:37.770525500Z\"\n}",
+      "error": null,
+      "duration_ms": 204
+    },
+    {
+      "name": "mcp_galaxium_create_hold_quotes_quote_id_holds_post",
+      "params": {
+        "quote_id": "Q-2026-000018"
+      },
+      "result": "{\n  \"holdId\": \"H-2026-000017\",\n  \"quoteId\": \"Q-2026-000018\",\n  \"status\": \"HELD\",\n  \"reservedUntil\": \"2026-10-10T06:26:39.115279900Z\",\n  \"externalBookingReference\": null,\n  \"errorMessage\": null,\n  \"createdAt\": \"2026-10-10T06:11:39.115279900Z\",\n  \"updatedAt\": \"2026-10-10T06:11:39.115279900Z\"\n}",
+      "error": null,
+      "duration_ms": 218
+    }
+  ],
+  "response": "I've found the cheapest economy flight from Earth to Mars (flight ID 1), created a quote for Alice (price $550,000), and placed a hold on it.\n\n**Details:**\n- Flight: Earth \u2192 Mars (departing 2099-01-01T09:00:00Z)\n- Seat class: economy\n- Quote ID: Q-2026-000018, price: $550,000\n- Hold ID: H-2026-000017, status: HELD\n- Hold expires: 2026-10-10T06:26:39Z (approximately 25 minutes from creation)\n\nThe hold is now reserved but not confirmed or booked. No booking has been made. You can confirm the hold later if you wish to proceed with booking.",
+  "usage": {
+    "input_tokens": 47142,
+    "output_tokens": 441,
+    "total_tokens": 47583,
+    "generation_ms": 0
+  },
+  "elapsed_ms": 71327,
+  "run_id": 5
+}

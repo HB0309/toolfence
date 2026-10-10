@@ -1,5 +1,8 @@
-﻿__pycache__/
+__pycache__/
 .venv/
 .env
 targets/galaxium/
 targets/nanobot/
+.spike-workspace/
+config/sessions/
+config/cache/

@@ -1,0 +1,34 @@
+{
+  "agents": {
+    "defaults": {
+      "model": "ibm-granite/granite-4.2-8b",
+      "provider": "openrouter",
+      "dream": { "enabled": false },
+      "maxToolIterations": 15,
+      "providerRetryMode": "persistent"
+    }
+  },
+  "providers": {
+    "openrouter": {
+      "apiKey": "${OPENROUTER_API_KEY}",
+      "extraBody": {
+        "provider": {
+          "order": ["DeepInfra", "CoreWeave"],
+          "allow_fallbacks": false
+        },
+        "reasoning": { "effort": "none" }
+      }
+    }
+  },
+  "tools": {
+    "ssrfWhitelist": ["127.0.0.0/8", "::1/128"],
+    "exec": { "enable": false },
+    "web": { "enable": false },
+    "mcpServers": {
+      "galaxium": {
+        "type": "streamableHttp",
+        "url": "http://localhost:8001/mcp"
+      }
+    }
+  }
+}

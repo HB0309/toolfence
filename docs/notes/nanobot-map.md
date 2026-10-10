@@ -245,7 +245,7 @@ Inbound path (button press): [`channels/telegram/runtime.py:2211-2244`](../../ta
 
 **Extra request fields (upstream host pinning):** [`config/schema.py:206`](../../targets/nanobot/nanobot/config/schema.py:206) — `extra_body: dict[str, Any] | None = None` on `ProviderConfig`. The `extraBody.provider.order` array takes the exact host string from OpenRouter's provider routing — here `"DeepInfra"`.
 
-**Reasoning:** nanobot does not send reasoning settings for Granite (it only does this for Kimi, MiMo and Qwen; openai_compat_provider.py:1039, :1055), so we set it ourselves in extraBody: "reasoning": {"effort": "none"}. The spike checks that reasoning tokens are 0. To try thinking, change "none" to "low" there.
+**Reasoning:** nanobot does not send reasoning settings for Granite (it only does this for Kimi, MiMo and Qwen; openai_compat_provider.py:1039, :1055), so we set it ourselves in extraBody: "reasoning": {"effort": "none"}. The spike checks that reasoning tokensare 0. To try thinking, change "none" to "low" there.
 
 ---
 
