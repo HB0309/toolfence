@@ -1,0 +1,328 @@
+{
+  "$defs": {
+    "Trace": {
+      "additionalProperties": false,
+      "description": "Full trace document returned by an adapter for one agent turn.",
+      "properties": {
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "session_key": {
+          "title": "Session Key",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "host": {
+          "title": "Host",
+          "type": "string"
+        },
+        "timestamp": {
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "error",
+            "timeout",
+            "max_iterations"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "final_reply": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Final Reply"
+        },
+        "tool_calls": {
+          "items": {
+            "$ref": "#/$defs/TraceEntry"
+          },
+          "title": "Tool Calls",
+          "type": "array"
+        },
+        "usage": {
+          "$ref": "#/$defs/UsageInfo"
+        }
+      },
+      "required": [
+        "run_id",
+        "session_key",
+        "model",
+        "host",
+        "timestamp",
+        "status",
+        "final_reply",
+        "tool_calls",
+        "usage"
+      ],
+      "title": "Trace",
+      "type": "object"
+    },
+    "TraceEntry": {
+      "additionalProperties": false,
+      "description": "One tool call recorded during an agent turn.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Result"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error"
+        },
+        "duration_ms": {
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "provenance": {
+          "additionalProperties": {
+            "enum": [
+              "user",
+              "first-party",
+              "untrusted"
+            ],
+            "type": "string"
+          },
+          "title": "Provenance",
+          "type": "object"
+        },
+        "guard_decision": {
+          "enum": [
+            "pass",
+            "hold"
+          ],
+          "title": "Guard Decision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "params",
+        "result",
+        "error",
+        "duration_ms",
+        "provenance",
+        "guard_decision"
+      ],
+      "title": "TraceEntry",
+      "type": "object"
+    },
+    "UsageInfo": {
+      "additionalProperties": false,
+      "description": "Token and timing usage reported by the model host.",
+      "properties": {
+        "input_tokens": {
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "reasoning_tokens": {
+          "title": "Reasoning Tokens",
+          "type": "integer"
+        },
+        "total_tokens": {
+          "title": "Total Tokens",
+          "type": "integer"
+        },
+        "generation_ms": {
+          "title": "Generation Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+        "total_tokens",
+        "generation_ms"
+      ],
+      "title": "UsageInfo",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One JSON object per trial stored in results/.\n\nInvariants enforced by model_validator:\n\nAttack trials (kind == \"attack\"):\n- channel, probe_id, canary must all be non-null.\n- verdict is one of: \"leaked\" | \"held\" | \"refused\" | \"inconclusive\" | \"skipped\".\n\nNormal trials (kind == \"normal\"):\n- channel, probe_id, canary must all be null.\n- verdict must be null (completed \u2014 outcome in task_success) or \"skipped\" (not run).\n\nSkipped trials (verdict == \"skipped\", either kind):\n- skip_reason must be a non-null string.\n- trace must be null.\n\nNon-skipped trials:\n- trace must be non-null.",
+  "properties": {
+    "trial_id": {
+      "title": "Trial Id",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "attack",
+        "normal"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "channel": {
+      "anyOf": [
+        {
+          "enum": [
+            "user-input",
+            "tool-result"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Channel"
+    },
+    "defense": {
+      "enum": [
+        "none",
+        "datamarking",
+        "instructional"
+      ],
+      "title": "Defense",
+      "type": "string"
+    },
+    "guard_on": {
+      "title": "Guard On",
+      "type": "boolean"
+    },
+    "probe_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Probe Id"
+    },
+    "canary": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Canary"
+    },
+    "verdict": {
+      "anyOf": [
+        {
+          "enum": [
+            "leaked",
+            "held",
+            "refused",
+            "inconclusive",
+            "skipped"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Verdict"
+    },
+    "task_success": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Task Success"
+    },
+    "trace": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Trace"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "canary_in_args": {
+      "title": "Canary In Args",
+      "type": "boolean"
+    },
+    "cards_shown": {
+      "title": "Cards Shown",
+      "type": "integer"
+    },
+    "skip_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Skip Reason"
+    }
+  },
+  "required": [
+    "trial_id",
+    "run_id",
+    "kind",
+    "channel",
+    "defense",
+    "guard_on",
+    "probe_id",
+    "canary",
+    "verdict",
+    "task_success",
+    "trace",
+    "canary_in_args",
+    "cards_shown"
+  ],
+  "title": "TrialRecord",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

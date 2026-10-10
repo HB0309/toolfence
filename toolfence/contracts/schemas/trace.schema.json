@@ -1,0 +1,180 @@
+{
+  "$defs": {
+    "TraceEntry": {
+      "additionalProperties": false,
+      "description": "One tool call recorded during an agent turn.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Result"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error"
+        },
+        "duration_ms": {
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "provenance": {
+          "additionalProperties": {
+            "enum": [
+              "user",
+              "first-party",
+              "untrusted"
+            ],
+            "type": "string"
+          },
+          "title": "Provenance",
+          "type": "object"
+        },
+        "guard_decision": {
+          "enum": [
+            "pass",
+            "hold"
+          ],
+          "title": "Guard Decision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "params",
+        "result",
+        "error",
+        "duration_ms",
+        "provenance",
+        "guard_decision"
+      ],
+      "title": "TraceEntry",
+      "type": "object"
+    },
+    "UsageInfo": {
+      "additionalProperties": false,
+      "description": "Token and timing usage reported by the model host.",
+      "properties": {
+        "input_tokens": {
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "reasoning_tokens": {
+          "title": "Reasoning Tokens",
+          "type": "integer"
+        },
+        "total_tokens": {
+          "title": "Total Tokens",
+          "type": "integer"
+        },
+        "generation_ms": {
+          "title": "Generation Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+        "total_tokens",
+        "generation_ms"
+      ],
+      "title": "UsageInfo",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Full trace document returned by an adapter for one agent turn.",
+  "properties": {
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "session_key": {
+      "title": "Session Key",
+      "type": "string"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "host": {
+      "title": "Host",
+      "type": "string"
+    },
+    "timestamp": {
+      "title": "Timestamp",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "error",
+        "timeout",
+        "max_iterations"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "final_reply": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Final Reply"
+    },
+    "tool_calls": {
+      "items": {
+        "$ref": "#/$defs/TraceEntry"
+      },
+      "title": "Tool Calls",
+      "type": "array"
+    },
+    "usage": {
+      "$ref": "#/$defs/UsageInfo"
+    }
+  },
+  "required": [
+    "run_id",
+    "session_key",
+    "model",
+    "host",
+    "timestamp",
+    "status",
+    "final_reply",
+    "tool_calls",
+    "usage"
+  ],
+  "title": "Trace",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

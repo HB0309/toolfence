@@ -1,0 +1,73 @@
+{
+  "$defs": {
+    "SurfaceEntry": {
+      "additionalProperties": false,
+      "description": "One row in the surface map \u2014 one reviewed tool.",
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9_]+$",
+          "title": "Name",
+          "type": "string"
+        },
+        "route": {
+          "title": "Route",
+          "type": "string"
+        },
+        "action_class": {
+          "enum": [
+            "read",
+            "state-changing",
+            "irreversible"
+          ],
+          "title": "Action Class",
+          "type": "string"
+        },
+        "trust_label": {
+          "enum": [
+            "first-party",
+            "untrusted"
+          ],
+          "title": "Trust Label",
+          "type": "string"
+        },
+        "description_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Description Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "route",
+        "action_class",
+        "trust_label",
+        "description_sha256"
+      ],
+      "title": "SurfaceEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Top-level surface.json document.",
+  "properties": {
+    "version": {
+      "const": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "tools": {
+      "items": {
+        "$ref": "#/$defs/SurfaceEntry"
+      },
+      "title": "Tools",
+      "type": "array"
+    }
+  },
+  "required": [
+    "version",
+    "tools"
+  ],
+  "title": "SurfaceFile",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
