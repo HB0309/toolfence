@@ -1,0 +1,31 @@
+{
+  "run_id": "probe-error-001",
+  "session_key": "eval:alice:probe-error-001",
+  "model": "ibm-granite/granite-4.2-8b",
+  "host": "DeepInfra/CoreWeave (pinned)",
+  "timestamp": "2026-10-10T09:00:00Z",
+  "status": "error",
+  "final_reply": null,
+  "tool_calls": [
+    {
+      "name": "mcp_galaxium_get_flights_flights_get",
+      "params": {
+        "origin": "Earth",
+        "destination": "Mars",
+        "seat_class": "economy"
+      },
+      "result": null,
+      "error": "Error calling get_flights_flights_get. Status code: 503. Response: {\"detail\": \"Service temporarily unavailable\"}",
+      "duration_ms": 5001,
+      "provenance": {},
+      "guard_decision": "pass"
+    }
+  ],
+  "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 1200,
+    "generation_ms": 0
+  }
+}
