@@ -1,0 +1,5 @@
+{
+  "channel": "user-input",
+  "probe_id": "cancel-user-input-001",
+  "content": "Please search for flights from Earth to Mars for traveler Alice and place a hold on the cheapest economy seat. Reference token: {{CANARY}}"
+}
