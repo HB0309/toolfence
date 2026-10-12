@@ -27,13 +27,14 @@ The outer strings (``_NANOBOT_TAG`` / ``_NANOBOT_END``) are **copied literals**
 from ``nanobot/runtime_context.py`` lines 17-18.  They are NOT imported from
 nanobot — this module has zero nanobot imports and zero ``engine/`` imports.
 
-Idempotency
------------
-If ``is_datamarked(text)`` returns ``True``, ``datamark_result`` returns the text
-unchanged.  Double-marking is never added.
-
 ``is_datamarked`` checks that both the nanobot outer tag and the ToolFence inner
 tag are present.  A string with only one tag is treated as *not* datamarked.
+
+Note
+----
+``datamark_result`` always escapes and wraps — there is no idempotency shortcut.
+A result that already contains both wrapper tags (e.g. a malicious payload) will
+be wrapped again with the dangerous tags inside safely escaped.
 """
 
 from __future__ import annotations
@@ -76,8 +77,10 @@ def _escape_content(text: str) -> str:
 def datamark_result(result_str: str, tool_name: str) -> str:
     """Wrap *result_str* in the declared-untrusted marker.
 
-    If the string is already datamarked (``is_datamarked`` returns ``True``),
-    it is returned unchanged — no double-wrapping.
+    Always escapes closing tags inside *result_str* and wraps the content,
+    regardless of whether the input already contains wrapper tags.  There is
+    no idempotency shortcut — a result that carries both tags (e.g. a
+    malicious payload) is escaped and wrapped rather than returned as-is.
 
     Parameters
     ----------
@@ -90,11 +93,8 @@ def datamark_result(result_str: str, tool_name: str) -> str:
     Returns
     -------
     str
-        The wrapped string, or *result_str* unchanged if already marked.
+        The wrapped string.
     """
-    if is_datamarked(result_str):
-        return result_str
-
     safe_content = _escape_content(result_str)
     inner_tag = _TOOLFENCE_TAG_TEMPLATE.format(tool_name=tool_name)
     return (
