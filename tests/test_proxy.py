@@ -41,6 +41,7 @@ import pytest
 from toolfence.contracts.guard import HeldCallEvent
 from toolfence.contracts.surface import SurfaceFile
 from toolfence.guard.card import build_card_message
+from toolfence.guard.confirm import ConfirmGrant
 from toolfence.guard.datamark import is_datamarked
 from toolfence.guard.decision import GuardDecision
 from toolfence.guard.provenance import ProvenanceStore
@@ -100,6 +101,7 @@ def _make_proxy(
         tnt,
         dec,
         callback,
+        ConfirmGrant(),
         guard_on=guard_on,
         datamark_on=datamark_on,
     )
@@ -405,7 +407,7 @@ def test_untrusted_read_count_tracked() -> None:
     prov.record_user_message("QT-123")
     held: list[HeldCallEvent] = []
     state_proxy = GuardedProxy(
-        state_tool, surface, prov, tnt, GuardDecision(), held.append, guard_on=True
+        state_tool, surface, prov, tnt, GuardDecision(), held.append, ConfirmGrant(), guard_on=True
     )
     _run(state_proxy.execute(quote_id="QT-123"))
 

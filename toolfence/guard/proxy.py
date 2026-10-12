@@ -12,23 +12,30 @@ returned from ``tool.execute`` unchanged and provenance is still recorded
 
 Logic order inside ``execute``
 -------------------------------
-1. If ``guard_on``:
+0. Pop ``__source__`` from ``params`` (key ``"__source__"``; default
+   ``"first-party"``).  This must happen before anything else so the key never
+   reaches ``tool.execute``.  Track B's launcher passes ``__source__="user"``
+   when the trigger is a button-click callback.
+1. Compute the arguments hash and call
+   ``confirm_grant.consume_grant(tool_name, args_hash, source)``.  If ``True``,
+   skip Guard entirely and call ``tool.execute(**params)`` directly.
+2. If ``guard_on``:
    a. Resolve provenance label for each param via ``provenance.resolve_argument``.
    b. Determine ``action_class`` from ``surface_map`` (default ``"state-changing"``
       if the tool is absent — BASE-2 fail-closed rule).
    c. Call ``decision.decide``; on ``"hold"``:
-      - Compute ``arguments_hash`` (SHA-256 of ``json.dumps(params, sort_keys=True)``).
+      - Re-use the already-computed ``arguments_hash``.
       - Determine hold reason and ``untrusted_arg_name``.
       - Emit ``HeldCallEvent`` via ``on_held``.
       - Return the hold sentinel without calling ``tool.execute``.
-2. Call ``tool.execute(**params)``; capture the string result.
-3. Determine the tool's ``trust_label`` from ``surface_map``
+3. Call ``tool.execute(**params)``; capture the string result.
+4. Determine the tool's ``trust_label`` from ``surface_map``
    (default ``"first-party"`` if absent).
-4. Record the result in ``provenance`` via ``record_tool_result``.
-5. If the ``trust_label`` is ``"untrusted"``, mark the session tainted.
-6. If ``datamark_on`` and ``trust_label == "untrusted"``, apply ``datamark_result``
+5. Record the result in ``provenance`` via ``record_tool_result``.
+6. If the ``trust_label`` is ``"untrusted"``, mark the session tainted.
+7. If ``datamark_on`` and ``trust_label == "untrusted"``, apply ``datamark_result``
    to the result before returning.
-7. Return the (possibly datamarked) result.
+8. Return the (possibly datamarked) result.
 
 This module has zero nanobot imports and zero ``toolfence.engine`` imports.
 """
@@ -41,6 +48,7 @@ from typing import Any, Callable
 
 from toolfence.contracts.guard import HeldCallEvent
 from toolfence.contracts.surface import SurfaceFile
+from toolfence.guard.confirm import ConfirmGrant
 from toolfence.guard.datamark import datamark_result
 from toolfence.guard.decision import GuardDecision
 from toolfence.guard.provenance import ProvenanceStore
@@ -116,6 +124,7 @@ class GuardedProxy:
         taint: SessionTaint,
         decision: GuardDecision,
         on_held: Callable[[HeldCallEvent], None],
+        confirm_grant: ConfirmGrant,
         *,
         guard_on: bool = True,
         datamark_on: bool = False,
@@ -127,6 +136,7 @@ class GuardedProxy:
         object.__setattr__(self, "_taint", taint)
         object.__setattr__(self, "_decision", decision)
         object.__setattr__(self, "_on_held", on_held)
+        object.__setattr__(self, "_confirm_grant", confirm_grant)
         object.__setattr__(self, "_guard_on", guard_on)
         object.__setattr__(self, "_datamark_on", datamark_on)
         # Per-session counter: how many untrusted results have been read.
@@ -160,7 +170,35 @@ class GuardedProxy:
         tool_name: str = self.name
 
         # ----------------------------------------------------------------
-        # Step 1 — Guard decision (only when guard_on=True)
+        # Step 0 — Extract __source__ kwarg (must happen before anything
+        # else so it never leaks into tool.execute's real parameters).
+        # Track B passes __source__="user" for button-click callbacks.
+        # ----------------------------------------------------------------
+        source: str = params.pop("__source__", "first-party")
+
+        # ----------------------------------------------------------------
+        # Step 1 — Check for a pending user-approved confirm grant.
+        # If consumed, skip Guard entirely and jump straight to execution.
+        # ----------------------------------------------------------------
+        args_hash_for_grant = _compute_hash(params)
+        if self._confirm_grant.consume_grant(tool_name, args_hash_for_grant, source):
+            result: Any = await self._tool.execute(**params)  # type: ignore[attr-defined]
+            result_str: str = str(result)
+            trust_label_grant = _get_trust_label(self._surface_map, tool_name)
+            self._provenance.record_tool_result(tool_name, result_str, trust_label_grant)  # type: ignore[arg-type]
+            if trust_label_grant == "untrusted":
+                self._taint.mark_tainted()
+                object.__setattr__(
+                    self,
+                    "_untrusted_read_count",
+                    self._untrusted_read_count + 1,
+                )
+            if self._datamark_on and trust_label_grant == "untrusted":
+                result_str = datamark_result(result_str, tool_name)
+            return result_str
+
+        # ----------------------------------------------------------------
+        # Step 2 — Guard decision (only when guard_on=True)
         # ----------------------------------------------------------------
         if self._guard_on:
             action_class = _get_action_class(self._surface_map, tool_name)
@@ -180,7 +218,7 @@ class GuardedProxy:
             )
 
             if verdict == "hold":
-                args_hash = _compute_hash(params)
+                args_hash = args_hash_for_grant  # already computed above
 
                 # Determine reason and untrusted_arg_name.
                 if action_class == "irreversible":
@@ -209,13 +247,13 @@ class GuardedProxy:
                 return _HOLD_SENTINEL
 
         # ----------------------------------------------------------------
-        # Step 2 — Call the real tool
+        # Step 3 — Call the real tool
         # ----------------------------------------------------------------
-        result: Any = await self._tool.execute(**params)  # type: ignore[attr-defined]
-        result_str: str = str(result)
+        result = await self._tool.execute(**params)  # type: ignore[attr-defined]
+        result_str = str(result)
 
         # ----------------------------------------------------------------
-        # Steps 3–6 — Provenance recording, taint, datamark
+        # Steps 4–7 — Provenance recording, taint, datamark
         # ----------------------------------------------------------------
         trust_label = _get_trust_label(self._surface_map, tool_name)
 
