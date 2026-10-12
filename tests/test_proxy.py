@@ -389,12 +389,18 @@ def test_taint_set_after_untrusted_result() -> None:
 
 
 def test_untrusted_read_count_tracked() -> None:
-    """untrusted_read_count in HeldCallEvent reflects reads made before the hold."""
+    """untrusted_read_count in HeldCallEvent reflects the session-wide count.
+
+    Two separate proxy instances share the same SessionTaint.  The read proxy
+    reads one untrusted result; the state-changing proxy then gets held.
+    The HeldCallEvent.untrusted_read_count must be 1 (not 0) because both
+    proxies share the taint object that holds the counter.
+    """
     tnt = SessionTaint()
     prov = ProvenanceStore()
     surface = _load_surface()
 
-    # First: read an untrusted result to increment the counter
+    # First: read an untrusted result via the read proxy.
     read_tool = _make_tool(_UNTRUSTED_READ_TOOL, result="review data")
     read_proxy, _ = _make_proxy(
         read_tool, surface_map=surface, provenance=prov, taint=tnt,
@@ -402,7 +408,10 @@ def test_untrusted_read_count_tracked() -> None:
     )
     _run(read_proxy.execute(flight_id="F4"))
 
-    # Now trigger a hold on the state-changing tool (session is tainted)
+    # Verify the shared taint object recorded the read.
+    assert tnt.untrusted_read_count == 1, "SessionTaint must record the untrusted read"
+
+    # Now trigger a hold on the state-changing tool (session is tainted).
     state_tool = _make_tool(_STATE_CHANGING_TOOL)
     prov.record_user_message("QT-123")
     held: list[HeldCallEvent] = []
@@ -412,11 +421,12 @@ def test_untrusted_read_count_tracked() -> None:
     _run(state_proxy.execute(quote_id="QT-123"))
 
     assert len(held) == 1
-    # untrusted_read_count on the state-changing proxy is 0 (it hasn't read any)
-    # but the taint was set by the read proxy. The count on the held event reflects
-    # the state-changing proxy's own counter.
-    # What matters is that the reason is tainted_session (because tnt is shared).
     assert held[0].reason == "tainted_session"
+    # The count on the event must reflect the session-wide counter (1), not the
+    # state_proxy's own per-instance counter (which would have been 0 under the old bug).
+    assert held[0].untrusted_read_count == 1, (
+        "HeldCallEvent.untrusted_read_count must reflect session-wide count via shared taint"
+    )
 
 
 # ---------------------------------------------------------------------------

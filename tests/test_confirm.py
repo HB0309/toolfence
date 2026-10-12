@@ -2,12 +2,11 @@
 
 Test inventory
 --------------
-  test_consume_matching_user_grant           -- store then consume with source="user" → True, consumed
-  test_consume_wrong_args_hash               -- store then consume with wrong hash → False, not consumed
-  test_consume_wrong_source                  -- store then consume with source="first-party" → False
-  test_proxy_confirm_retry_passes            -- hold → store_pending → retry __source__="user" → execute called
-  test_proxy_confirm_retry_different_args    -- hold → retry different args → hold again, execute not called
-  test_import_check_confirm                  -- confirm.py: no nanobot, no LLM, no engine, no button labels
+  test_consume_matching_grant              -- store then consume with matching data → True, consumed
+  test_consume_wrong_args_hash             -- store then consume with wrong hash → False, not consumed
+  test_proxy_confirm_retry_passes          -- hold → store_pending → retry → execute called
+  test_proxy_confirm_retry_different_args  -- hold → retry different args → hold again, execute not called
+  test_import_check_confirm                -- confirm.py: no nanobot, no LLM, no engine, no button labels
 """
 
 from __future__ import annotations
@@ -90,18 +89,18 @@ def _args_hash(params: dict[str, Any]) -> str:
 # Test 1 — matching user grant is consumed once, second call returns False
 # ---------------------------------------------------------------------------
 
-def test_consume_matching_user_grant() -> None:
-    """store_pending then consume_grant with matching data and source='user' → True.
+def test_consume_matching_grant() -> None:
+    """store_pending then consume_grant with matching data → True.
     A second call with the same data → False (grant is consumed and cleared).
     """
     cg = ConfirmGrant()
     cg.store_pending("my_tool", "abc123")
 
-    result = cg.consume_grant("my_tool", "abc123", source="user")
-    assert result is True, "Expected True for matching user grant"
+    result = cg.consume_grant("my_tool", "abc123")
+    assert result is True, "Expected True for matching grant"
 
     # Grant is cleared — second attempt must fail.
-    result2 = cg.consume_grant("my_tool", "abc123", source="user")
+    result2 = cg.consume_grant("my_tool", "abc123")
     assert result2 is False, "Expected False — grant was already consumed"
 
 
@@ -116,41 +115,22 @@ def test_consume_wrong_args_hash() -> None:
     cg = ConfirmGrant()
     cg.store_pending("my_tool", "correct_hash")
 
-    result = cg.consume_grant("my_tool", "wrong_hash", source="user")
+    result = cg.consume_grant("my_tool", "wrong_hash")
     assert result is False, "Expected False for args_hash mismatch"
 
     # Grant still valid — correct hash should succeed now.
-    result2 = cg.consume_grant("my_tool", "correct_hash", source="user")
+    result2 = cg.consume_grant("my_tool", "correct_hash")
     assert result2 is True, "Grant should still be pending after failed attempt"
 
 
 # ---------------------------------------------------------------------------
-# Test 3 — wrong source → False
-# ---------------------------------------------------------------------------
-
-def test_consume_wrong_source() -> None:
-    """store_pending then consume_grant with source='first-party' → False.
-    A tool-result-driven retry must not be able to consume the grant.
-    """
-    cg = ConfirmGrant()
-    cg.store_pending("my_tool", "abc123")
-
-    # Simulate a tool-driven retry (not a user button-click).
-    result = cg.consume_grant("my_tool", "abc123", source="first-party")
-    assert result is False, "Expected False: source='first-party' must not consume grant"
-
-    # Grant still valid — a user click should still work.
-    result2 = cg.consume_grant("my_tool", "abc123", source="user")
-    assert result2 is True, "Grant should still be pending after rejected non-user attempt"
-
-
-# ---------------------------------------------------------------------------
-# Test 4 — proxy integration: hold → store_pending → retry with __source__="user"
+# Test 3 — proxy integration: hold → store_pending → retry → execute called
 # ---------------------------------------------------------------------------
 
 def test_proxy_confirm_retry_passes() -> None:
     """Full integration: Guard holds the call, Track B stores a pending grant,
-    then retries with __source__='user' → tool.execute() is called, result returned.
+    then retries → tool.execute() is called, result returned.
+    Track B calls store_pending directly (button-click callback); no __source__ kwarg.
     """
     cg = ConfirmGrant()
     tool = _make_tool(_IRREVERSIBLE_TOOL, result="booking cancelled")
@@ -168,14 +148,14 @@ def test_proxy_confirm_retry_passes() -> None:
     ev = held[0]
     cg.store_pending(ev.tool_name, ev.arguments_hash)
 
-    # Retry with __source__="user" — grant should be consumed, execute called.
-    result2 = _run(proxy.execute(**params, __source__="user"))
+    # Retry — grant should be consumed, execute called.
+    result2 = _run(proxy.execute(**params))
     assert result2 == "booking cancelled", f"Expected real result, got {result2!r}"
     tool.execute.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
-# Test 5 — proxy integration: hold → retry with different args → hold again
+# Test 4 — proxy integration: hold → retry with different args → hold again
 # ---------------------------------------------------------------------------
 
 def test_proxy_confirm_retry_different_args() -> None:
@@ -199,7 +179,7 @@ def test_proxy_confirm_retry_different_args() -> None:
 
     # Retry with DIFFERENT arguments — hash won't match stored grant.
     different_params = {"booking_id": "BK-99"}
-    result = _run(proxy.execute(**different_params, __source__="user"))
+    result = _run(proxy.execute(**different_params))
     assert "paused" in result.lower(), (
         f"Expected hold sentinel for different args, got {result!r}"
     )

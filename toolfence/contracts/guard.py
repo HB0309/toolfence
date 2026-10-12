@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from toolfence.guard.confirm import ConfirmGrant
+from typing import Any, Literal
 
 
 # Type alias used throughout the codebase for a guard decision.
@@ -46,7 +43,7 @@ class ProxyStub:
     that code inspecting registry entries sees the original values.
     """
 
-    def __init__(self, tool: Any, confirm_grant: "ConfirmGrant | None" = None) -> None:
+    def __init__(self, tool: Any) -> None:
         # Store under a name that won't collide with forwarded attributes.
         object.__setattr__(self, "_tool", tool)
 

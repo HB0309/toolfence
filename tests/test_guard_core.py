@@ -356,6 +356,28 @@ class TestSessionTaint:
         assert t1.is_tainted() is True
         assert t2.is_tainted() is False
 
+    def test_untrusted_read_count_starts_at_zero(self) -> None:
+        """A fresh SessionTaint has untrusted_read_count == 0."""
+        taint = SessionTaint()
+        assert taint.untrusted_read_count == 0
+
+    def test_increment_untrusted_reads(self) -> None:
+        """increment_untrusted_reads() increments the counter each call."""
+        taint = SessionTaint()
+        taint.increment_untrusted_reads()
+        assert taint.untrusted_read_count == 1
+        taint.increment_untrusted_reads()
+        assert taint.untrusted_read_count == 2
+
+    def test_untrusted_read_count_independent_per_instance(self) -> None:
+        """Two SessionTaint instances maintain independent counters."""
+        t1 = SessionTaint()
+        t2 = SessionTaint()
+        t1.increment_untrusted_reads()
+        t1.increment_untrusted_reads()
+        assert t1.untrusted_read_count == 2
+        assert t2.untrusted_read_count == 0
+
 
 # ===========================================================================
 # Import boundary checks

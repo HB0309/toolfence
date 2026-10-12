@@ -12,13 +12,11 @@ returned from ``tool.execute`` unchanged and provenance is still recorded
 
 Logic order inside ``execute``
 -------------------------------
-0. Pop ``__source__`` from ``params`` (key ``"__source__"``; default
-   ``"first-party"``).  This must happen before anything else so the key never
-   reaches ``tool.execute``.  Track B's launcher passes ``__source__="user"``
-   when the trigger is a button-click callback.
 1. Compute the arguments hash and call
-   ``confirm_grant.consume_grant(tool_name, args_hash, source)``.  If ``True``,
+   ``confirm_grant.consume_grant(tool_name, args_hash)``.  If ``True``,
    skip Guard entirely and call ``tool.execute(**params)`` directly.
+   (Track B's launcher calls ``confirm_grant.store_pending`` directly when
+   the native button-click callback fires — no ``__source__`` kwarg needed.)
 2. If ``guard_on``:
    a. Resolve provenance label for each param via ``provenance.resolve_argument``.
    b. Determine ``action_class`` from ``surface_map`` (default ``"state-changing"``
@@ -30,7 +28,7 @@ Logic order inside ``execute``
       - Return the hold sentinel without calling ``tool.execute``.
 3. Call ``tool.execute(**params)``; capture the string result.
 4. Determine the tool's ``trust_label`` from ``surface_map``
-   (default ``"first-party"`` if absent).
+   (default ``"untrusted"`` if absent — fail-closed for unreviewed tools).
 5. Record the result in ``provenance`` via ``record_tool_result``.
 6. If the ``trust_label`` is ``"untrusted"``, mark the session tainted.
 7. If ``datamark_on`` and ``trust_label == "untrusted"``, apply ``datamark_result``
@@ -72,12 +70,13 @@ def _get_action_class(surface_map: SurfaceFile, tool_name: str) -> str:
 def _get_trust_label(surface_map: SurfaceFile, tool_name: str) -> str:
     """Return the ``trust_label`` for *tool_name* from *surface_map*.
 
-    Defaults to ``"first-party"`` if the tool is not listed.
+    Defaults to ``"untrusted"`` if the tool is not listed — unreviewed tools
+    are treated as untrusted (fail-closed).
     """
     for entry in surface_map.tools:
         if entry.name == tool_name:
             return entry.trust_label
-    return "first-party"
+    return "untrusted"
 
 
 def _compute_hash(params: dict[str, Any]) -> str:
@@ -139,8 +138,6 @@ class GuardedProxy:
         object.__setattr__(self, "_confirm_grant", confirm_grant)
         object.__setattr__(self, "_guard_on", guard_on)
         object.__setattr__(self, "_datamark_on", datamark_on)
-        # Per-session counter: how many untrusted results have been read.
-        object.__setattr__(self, "_untrusted_read_count", 0)
 
     # ------------------------------------------------------------------
     # Explicit forwarding — same three properties as ProxyStub
@@ -170,29 +167,20 @@ class GuardedProxy:
         tool_name: str = self.name
 
         # ----------------------------------------------------------------
-        # Step 0 — Extract __source__ kwarg (must happen before anything
-        # else so it never leaks into tool.execute's real parameters).
-        # Track B passes __source__="user" for button-click callbacks.
-        # ----------------------------------------------------------------
-        source: str = params.pop("__source__", "first-party")
-
-        # ----------------------------------------------------------------
         # Step 1 — Check for a pending user-approved confirm grant.
         # If consumed, skip Guard entirely and jump straight to execution.
+        # Track B calls confirm_grant.store_pending() directly when the
+        # native button-click callback fires; no __source__ kwarg needed.
         # ----------------------------------------------------------------
         args_hash_for_grant = _compute_hash(params)
-        if self._confirm_grant.consume_grant(tool_name, args_hash_for_grant, source):
+        if self._confirm_grant.consume_grant(tool_name, args_hash_for_grant):
             result: Any = await self._tool.execute(**params)  # type: ignore[attr-defined]
             result_str: str = str(result)
             trust_label_grant = _get_trust_label(self._surface_map, tool_name)
             self._provenance.record_tool_result(tool_name, result_str, trust_label_grant)  # type: ignore[arg-type]
             if trust_label_grant == "untrusted":
                 self._taint.mark_tainted()
-                object.__setattr__(
-                    self,
-                    "_untrusted_read_count",
-                    self._untrusted_read_count + 1,
-                )
+                self._taint.increment_untrusted_reads()
             if self._datamark_on and trust_label_grant == "untrusted":
                 result_str = datamark_result(result_str, tool_name)
             return result_str
@@ -240,7 +228,7 @@ class GuardedProxy:
                     arguments=dict(params),
                     arguments_hash=args_hash,
                     reason=reason,  # type: ignore[arg-type]
-                    untrusted_read_count=self._untrusted_read_count,
+                    untrusted_read_count=self._taint.untrusted_read_count,
                     untrusted_arg_name=untrusted_arg_name,
                 )
                 self._on_held(event)
@@ -263,11 +251,7 @@ class GuardedProxy:
         # Update taint and untrusted read counter.
         if trust_label == "untrusted":
             self._taint.mark_tainted()
-            object.__setattr__(
-                self,
-                "_untrusted_read_count",
-                self._untrusted_read_count + 1,
-            )
+            self._taint.increment_untrusted_reads()
 
         # Apply datamarking if requested and the tool is untrusted.
         if self._datamark_on and trust_label == "untrusted":
