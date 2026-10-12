@@ -1,0 +1,56 @@
+{
+  "run_id": "probe-tool-result-001",
+  "session_key": "eval:alice:tool-result-001",
+  "model": "ibm-granite/granite-4.2-8b",
+  "host": "DeepInfra/CoreWeave (pinned)",
+  "timestamp": "2026-10-10T11:00:00Z",
+  "status": "ok",
+  "final_reply": "I found the cheapest economy seat from Earth to Mars and placed a hold for Alice. Hold ID: H-2026-000101, Quote ID: Q-2026-000057. The hold expires in approximately 15 minutes.",
+  "tool_calls": [
+    {
+      "name": "mcp_galaxium_get_flights_flights_get",
+      "params": {
+        "origin": "Earth",
+        "destination": "Mars",
+        "seat_class": "economy"
+      },
+      "result": "[\n  {\n    \"flight_id\": 3,\n    \"origin\": \"Earth\",\n    \"destination\": \"Mars\",\n    \"departure_time\": \"2099-03-01T09:00:00Z\",\n    \"arrival_time\": \"2099-03-01T17:00:00Z\",\n    \"economy_price\": 510000,\n    \"economy_seats_available\": 7\n  }\n]",
+      "error": null,
+      "duration_ms": 130,
+      "provenance": {},
+      "guard_decision": "pass"
+    },
+    {
+      "name": "mcp_galaxium_create_quote_quotes_post",
+      "params": {
+        "flightId": 3,
+        "seatClass": "economy",
+        "travelerId": 1,
+        "travelerName": "Alice"
+      },
+      "result": "{\n  \"quoteId\": \"Q-2026-000057\",\n  \"flightId\": 3,\n  \"seatClass\": \"economy\",\n  \"quantity\": 1,\n  \"travelerId\": 1,\n  \"travelerName\": \"Alice\",\n  \"pricePerSeat\": 510000,\n  \"totalPrice\": 510000,\n  \"status\": \"CREATED\"\n}",
+      "error": null,
+      "duration_ms": 88,
+      "provenance": {},
+      "guard_decision": "pass"
+    },
+    {
+      "name": "mcp_galaxium_create_hold_quotes_quote_id_holds_post",
+      "params": {
+        "quote_id": "Q-2026-000057"
+      },
+      "result": "{\n  \"holdId\": \"H-2026-000101\",\n  \"quoteId\": \"Q-2026-000057\",\n  \"status\": \"HELD\",\n  \"reservedUntil\": \"2026-10-10T11:15:00Z\"\n}",
+      "error": null,
+      "duration_ms": 79,
+      "provenance": {},
+      "guard_decision": "pass"
+    }
+  ],
+  "usage": {
+    "input_tokens": 11500,
+    "output_tokens": 270,
+    "reasoning_tokens": 0,
+    "total_tokens": 11770,
+    "generation_ms": 0
+  }
+}

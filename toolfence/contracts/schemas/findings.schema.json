@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FindingsList",
+  "description": "Array of machine-readable security findings (PG-9). Each entry records one finding with its mitigation status and reference.",
+  "type": "array",
+  "items": {
+    "$ref": "#/definitions/Finding"
+  },
+  "definitions": {
+    "Finding": {
+      "title": "Finding",
+      "description": "One security finding identified by ToolFence during the evaluation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "mitigation_status",
+        "mitigation_ref"
+      ],
+      "properties": {
+        "id": {
+          "title": "Id",
+          "description": "Sequential finding identifier, e.g. \"F-01\".",
+          "type": "string",
+          "pattern": "^F-[0-9]{2}$"
+        },
+        "title": {
+          "title": "Title",
+          "description": "Short human-readable description of the finding.",
+          "type": "string",
+          "minLength": 1
+        },
+        "mitigation_status": {
+          "title": "Mitigation Status",
+          "description": "Whether the finding has been mitigated.",
+          "type": "string",
+          "enum": [
+            "mitigated",
+            "partially_mitigated",
+            "reported_only"
+          ]
+        },
+        "mitigation_ref": {
+          "$ref": "#/definitions/MitigationRef"
+        }
+      }
+    },
+    "MitigationRef": {
+      "title": "MitigationRef",
+      "description": "Structured reference to the requirement or patch that addresses the finding.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "req_id",
+        "description"
+      ],
+      "properties": {
+        "req_id": {
+          "title": "Req Id",
+          "description": "Requirement or patch identifier, e.g. \"GRD-1\" or \"PG-3\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "title": "Description",
+          "description": "One-sentence explanation of how the mitigation addresses the finding.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

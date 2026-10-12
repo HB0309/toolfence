@@ -1,0 +1,119 @@
+[
+  {
+    "id": "F-01",
+    "title": "Error results skip the after-hook — on_execute_tool_error fires instead; result is null",
+    "mitigation_status": "mitigated",
+    "mitigation_ref": {
+      "req_id": "GRD-1",
+      "description": "GuardedProxy wraps execute directly, so it intercepts the call regardless of which nanobot hook path fires on error."
+    }
+  },
+  {
+    "id": "F-02",
+    "title": "Every MCP tool defaults to read_only=False (state-changing) in nanobot",
+    "mitigation_status": "mitigated",
+    "mitigation_ref": {
+      "req_id": "BASE-1",
+      "description": "surface.json provides the authoritative action-class label per tool; ToolFence never relies on nanobot's read_only flag."
+    }
+  },
+  {
+    "id": "F-03",
+    "title": "Sub-agents run with _SubagentHook only — Guard hooks never fire during sub-agent turns",
+    "mitigation_status": "mitigated",
+    "mitigation_ref": {
+      "req_id": "GRD-13",
+      "description": "The spawn tool is unregistered from the nanobot registry after Guard setup, preventing sub-agent turns entirely."
+    }
+  },
+  {
+    "id": "F-04",
+    "title": "Dream turns are ephemeral — registered hooks are skipped for dream/memory turns",
+    "mitigation_status": "mitigated",
+    "mitigation_ref": {
+      "req_id": "GRD-13",
+      "description": "Dream turns are disabled via agents.defaults.dream.enabled: false in nanobot config, removing the bypass path."
+    }
+  },
+  {
+    "id": "F-05",
+    "title": "The !-shell exec tool calls tool.execute() directly, bypassing all hooks",
+    "mitigation_status": "mitigated",
+    "mitigation_ref": {
+      "req_id": "GRD-13",
+      "description": "The exec tool is not registered in the nanobot registry, so it is unavailable to the agent."
+    }
+  },
+  {
+    "id": "F-06",
+    "title": "MCP reconnect silently replaces Guard proxies with bare MCPToolWrapper instances",
+    "mitigation_status": "mitigated",
+    "mitigation_ref": {
+      "req_id": "GRD-3",
+      "description": "Guard re-wraps every mcp_* entry after each reconnect, and a per-turn invariant check blocks the turn if any bare wrapper is detected."
+    }
+  },
+  {
+    "id": "F-07",
+    "title": "Large results saved to workspace files lose their trust labels unless Guard tracks the file path",
+    "mitigation_status": "partially_mitigated",
+    "mitigation_ref": {
+      "req_id": "GRD-6",
+      "description": "ProvenanceStore records path-to-label mappings so a later read_file call inherits the original trust label; coverage depends on Guard being wired before the workspace write."
+    }
+  },
+  {
+    "id": "F-08",
+    "title": "Empty quote schema caused the model to refuse the create_quote call",
+    "mitigation_status": "mitigated",
+    "mitigation_ref": {
+      "req_id": "PG-3",
+      "description": "Galaxium patch 0001 exposes named fields in the create_quote MCP tool schema, eliminating the empty-schema refusal."
+    }
+  },
+  {
+    "id": "F-09",
+    "title": "Agent used the shell (exec) to work around a missing tool schema",
+    "mitigation_status": "mitigated",
+    "mitigation_ref": {
+      "req_id": "GRD-13",
+      "description": "The exec tool is unregistered from the nanobot registry, removing this bypass path; patch 0001 also eliminates the schema gap that prompted the workaround."
+    }
+  },
+  {
+    "id": "F-10",
+    "title": "Coached agent invented an untraceable traveller ID; the pass verdict gave no signal",
+    "mitigation_status": "mitigated",
+    "mitigation_ref": {
+      "req_id": "GRD-4",
+      "description": "ProvenanceStore labels any value not traceable to a user message or first-party result as untrusted (fail-closed), so fabricated IDs trigger the Guard card rule."
+    }
+  },
+  {
+    "id": "F-11",
+    "title": "Unrequested register_user calls appeared in 5 of 10 clean runs — autonomous side-effect behaviour",
+    "mitigation_status": "mitigated",
+    "mitigation_ref": {
+      "req_id": "PG-6",
+      "description": "The narrowing fix removes register_user from the nanobot enabled_tools list, so the tool is not available to the agent during normal or evaluation runs."
+    }
+  },
+  {
+    "id": "F-12",
+    "title": "Error results confirmed live: register_user returning HTTP 409 yielded result: null in the trace",
+    "mitigation_status": "mitigated",
+    "mitigation_ref": {
+      "req_id": "GRD-1",
+      "description": "GuardedProxy wraps execute directly and captures the result regardless of the nanobot hook path taken on error, so null results are still labelled correctly."
+    }
+  },
+  {
+    "id": "F-13",
+    "title": "ssrfWhitelist configuration required for nanobot to reach a localhost MCP server",
+    "mitigation_status": "reported_only",
+    "mitigation_ref": {
+      "req_id": "PG-2",
+      "description": "The required ssrfWhitelist entry is documented in docs/setup.md; no code change is needed as this is a deployment configuration concern."
+    }
+  }
+]
