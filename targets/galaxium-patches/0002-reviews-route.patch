@@ -1,0 +1,182 @@
+diff --git a/booking_system_backend/models.py b/booking_system_backend/models.py
+index 3b970aa..890e68e 100644
+--- a/booking_system_backend/models.py
++++ b/booking_system_backend/models.py
+@@ -37,4 +37,12 @@ class Booking(Base):
+     status = Column(String, nullable=False)
+     booking_time = Column(String, nullable=False)
+     seat_class = Column(String, nullable=False, default='economy')  # economy/business/galaxium
+-    price_paid = Column(Integer, nullable=False)  # Actual price at booking time
+\ No newline at end of file
++    price_paid = Column(Integer, nullable=False)  # Actual price at booking time
++
++class Review(Base):
++    __tablename__ = 'reviews'
++    review_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
++    flight_id = Column(Integer, ForeignKey('flights.flight_id'), nullable=False)
++    reviewer  = Column(String, nullable=False)
++    rating    = Column(Integer, nullable=False)  # 1–5
++    body      = Column(String, nullable=False)
+\ No newline at end of file
+diff --git a/booking_system_backend/schemas.py b/booking_system_backend/schemas.py
+index 68b32aa..0b35c3a 100644
+--- a/booking_system_backend/schemas.py
++++ b/booking_system_backend/schemas.py
+@@ -88,6 +88,16 @@ class QuoteRequest(BaseModel):
+     travelerName: str
+ 
+ 
++class ReviewOut(BaseModel):
++    review_id: int
++    flight_id: int
++    reviewer: str
++    rating: int
++    body: str
++
++    model_config = ConfigDict(from_attributes=True)
++
++
+ class ErrorResponse(BaseModel):
+     success: bool = False
+     error: str
+diff --git a/booking_system_backend/seed.py b/booking_system_backend/seed.py
+index ab7056a..4a91f3e 100644
+--- a/booking_system_backend/seed.py
++++ b/booking_system_backend/seed.py
+@@ -7,13 +7,46 @@ import random
+ from datetime import datetime, timedelta, timezone
+ 
+ from db import SessionLocal, engine
+-from models import Base, Booking, Flight, User
++from models import Base, Booking, Flight, Review, User
++
++
++def seed_reviews(db) -> None:
++    """Insert synthetic reviews for the first three flights (idempotent)."""
++    if db.query(Review).count() > 0:
++        return
++    reviews = [
++        # Flight 1 — Earth → Mars
++        Review(flight_id=1, reviewer="Alice K.", rating=5,
++               body="Incredible views of the Martian sunrise on approach. Crew was attentive throughout."),
++        Review(flight_id=1, reviewer="Tomasz W.", rating=4,
++               body="Comfortable seats in business class. The food could use more variety but overall good."),
++        Review(flight_id=1, reviewer="Priya S.", rating=3,
++               body="Delayed by two hours at departure. Once airborne the ride was smooth enough."),
++        # Flight 2 — Earth → Moon
++        Review(flight_id=2, reviewer="Carlos M.", rating=5,
++               body="Short hop but absolutely worth it. Earthrise view from the window was breathtaking."),
++        Review(flight_id=2, reviewer="Yuki T.", rating=4,
++               body="Quick and efficient. Economy seats were a little narrow but the flight is only four hours."),
++        Review(flight_id=2, reviewer="Fatima A.", rating=2,
++               body="Luggage was delayed by three days. Customer service eventually sorted it out."),
++        # Flight 3 — Mars → Earth
++        Review(flight_id=3, reviewer="Dmitri V.", rating=5,
++               body="Best in-flight meal I have had on any route. The return journey was smoother than the outbound."),
++        Review(flight_id=3, reviewer="Mei L.", rating=4,
++               body="Galaxium class cabin is very spacious. A bit pricey but worth it for an eight-hour flight."),
++        Review(flight_id=3, reviewer="Samuel O.", rating=3,
++               body="Turbulence during the mid-route gravity transition woke me up twice. Otherwise fine."),
++    ]
++    db.add_all(reviews)
++    db.commit()
+ 
+ 
+ def seed():
+     Base.metadata.create_all(bind=engine)
+     db = SessionLocal()
+-    # Only seed if the database is empty to avoid wiping registered users
++    # Seed reviews regardless of whether other data exists
++    seed_reviews(db)
++    # Only seed users/flights/bookings if the database is otherwise empty
+     if db.query(User).count() > 0:
+         print("Database already has data — skipping seed.")
+         db.close()
+diff --git a/booking_system_backend/server.py b/booking_system_backend/server.py
+index 7eadcf7..d213940 100644
+--- a/booking_system_backend/server.py
++++ b/booking_system_backend/server.py
+@@ -9,12 +9,14 @@ from fastapi_mcp import FastApiMCP
+ from sqlalchemy.orm import Session
+ 
+ from db import get_db, init_db
++from models import Review
+ from schemas import (
+     BookingOut,
+     BookingRequest,
+     ErrorResponse,
+     FlightOut,
+     QuoteRequest,
++    ReviewOut,
+     UserOut,
+     UserRegistration,
+ )
+@@ -214,6 +216,12 @@ def get_user_endpoint(name: str, email: str, db: Session = Depends(get_db)):
+     return result
+ 
+ 
++@app.get("/flights/{flight_id}/reviews", response_model=list[ReviewOut], tags=["Reviews"])
++def get_flight_reviews(flight_id: int, db: Session = Depends(get_db)):
++    """Return all passenger reviews for a flight."""
++    return db.query(Review).filter(Review.flight_id == flight_id).all()
++
++
+ # ==================== JAVA SERVICE INTEGRATION ====================
+ 
+ JAVA_SERVICE_URL = os.getenv("JAVA_SERVICE_URL", "http://localhost:8080")
+diff --git a/booking_system_backend/tests/test_rest.py b/booking_system_backend/tests/test_rest.py
+index 73652f8..6b5cd83 100644
+--- a/booking_system_backend/tests/test_rest.py
++++ b/booking_system_backend/tests/test_rest.py
+@@ -3,7 +3,7 @@ from pathlib import Path
+ 
+ sys.path.insert(0, str(Path(__file__).parent.parent))
+ 
+-from models import Booking, Flight
++from models import Booking, Flight, Review
+ 
+ 
+ class TestFlightsEndpoint:
+@@ -883,3 +883,42 @@ class TestQuotesEndpoint:
+             "travelerName": "Ada Lovelace",
+         })
+         assert response.status_code == 422
++
++
++class TestReviewsEndpoint:
++    """Test GET /flights/{flight_id}/reviews endpoint."""
++
++    def test_reviews_returns_seeded_rows(self, client, db_session):
++        """Reviews for a flight with seeded rows returns a non-empty list with correct fields."""
++        db_session.add(Flight(
++            origin="Earth",
++            destination="Mars",
++            departure_time="2099-01-01 09:00",
++            arrival_time="2099-01-01 17:00",
++            base_price=1000000,
++            economy_seats_available=6,
++            business_seats_available=3,
++            galaxium_seats_available=1,
++        ))
++        db_session.commit()
++        flight = db_session.query(Flight).first()
++
++        db_session.add_all([
++            Review(flight_id=flight.flight_id, reviewer="Alice", rating=5, body="Great flight!"),
++            Review(flight_id=flight.flight_id, reviewer="Bob", rating=3, body="It was okay."),
++        ])
++        db_session.commit()
++
++        response = client.get(f"/flights/{flight.flight_id}/reviews")
++        assert response.status_code == 200
++        data = response.json()
++        assert len(data) == 2
++        assert all(k in data[0] for k in ("review_id", "flight_id", "reviewer", "rating", "body"))
++        assert data[0]["reviewer"] == "Alice"
++        assert data[0]["rating"] == 5
++
++    def test_reviews_empty_for_unknown_flight(self, client, db_session):
++        """Reviews endpoint returns an empty list for a flight_id with no reviews."""
++        response = client.get("/flights/9999/reviews")
++        assert response.status_code == 200
++        assert response.json() == []

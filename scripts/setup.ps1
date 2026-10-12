@@ -77,22 +77,35 @@ function Apply-Patches {
         return
     }
 
-    foreach ($patch in $patches) {
-        $patchPath = Resolve-Path $patch.FullName
+    # Find the highest-numbered patch that is already applied by scanning
+    # newest-to-oldest with "git apply --check --reverse".  A single per-patch
+    # reverse-check breaks when a later patch changes lines adjacent to an
+    # earlier patch's context, so we walk from the end and stop at the first
+    # match.  Every patch at or before that index is considered applied; only
+    # patches after it are applied.
+    $firstToApply = 0   # index into $patches; 0 = apply everything
 
-        # Check if the patch is already applied; skip if so.
-        # Use a local Continue scope so the git stderr output does not trip Stop mode.
-        $alreadyApplied = $false
-        $ErrorActionPreference = "Continue"
+    $ErrorActionPreference = "Continue"
+    for ($i = $patches.Count - 1; $i -ge 0; $i--) {
+        $patchPath = Resolve-Path $patches[$i].FullName
         git -C $TargetDir apply --check --reverse $patchPath 2>$null
-        if ($LASTEXITCODE -eq 0) { $alreadyApplied = $true }
-        $ErrorActionPreference = "Stop"
-
-        if ($alreadyApplied) {
-            Write-Host "[SKIP] $($patch.Name) already applied" -ForegroundColor Yellow
-            continue
+        if ($LASTEXITCODE -eq 0) {
+            # This patch (and all before it) are applied.
+            $firstToApply = $i + 1
+            break
         }
+    }
+    $ErrorActionPreference = "Stop"
 
+    # Report skipped patches.
+    for ($i = 0; $i -lt $firstToApply; $i++) {
+        Write-Host "[SKIP] $($patches[$i].Name) already applied" -ForegroundColor Yellow
+    }
+
+    # Apply remaining patches in order.
+    for ($i = $firstToApply; $i -lt $patches.Count; $i++) {
+        $patch     = $patches[$i]
+        $patchPath = Resolve-Path $patch.FullName
         Invoke-Step "Apply $($patch.Name)" {
             git -C $TargetDir apply $patchPath
             if ($LASTEXITCODE -ne 0) { throw "git apply failed" }
