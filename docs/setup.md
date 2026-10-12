@@ -100,9 +100,22 @@ Copy-Item .env.example .env
 | Variable | Used by | Notes |
 |---|---|---|
 | `OPENROUTER_API_KEY` | `scripts/run_spike.py`, live eval runs | Not needed for CI/tests |
+| `TELEGRAM_BOT_TOKEN` | `config/nanobot.gateway.json`, gateway demo | Gateway only — not needed for eval runs |
+| `TELEGRAM_USER_ID` | `config/nanobot.gateway.json`, gateway demo | Your numeric Telegram user ID |
 
 `.env` is never committed. No secret must appear outside `.env.example` (which contains
 only placeholder values).
+
+### Getting your Telegram credentials (gateway demo only)
+
+**Bot token:** Open Telegram and start a chat with `@BotFather`. Send `/newbot`, follow the prompts to name your bot, and copy the token it returns (format: `123456789:ABCdef...`). Paste it as `TELEGRAM_BOT_TOKEN` in your `.env`.
+
+**User ID:** Start a chat with `@userinfobot` on Telegram and send any message. The bot replies with your numeric user ID (e.g. `123456789`). Paste it as `TELEGRAM_USER_ID`. This is the only ID that `allowFrom` will accept — the gateway rejects messages from anyone else.
+
+> **Note (B-5):** The 9 tool names in `config/nanobot.eval.json` under `enabledTools` are
+> best-guess names derived from the `fastapi_mcp` naming convention. B-5 will verify all 9
+> against the live MCP tool list after the Galaxium stack is running and update the list if any
+> name differs.
 
 ---
 

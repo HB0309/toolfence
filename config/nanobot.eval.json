@@ -1,0 +1,48 @@
+{
+  "agents": {
+    "defaults": {
+      "model": "ibm-granite/granite-4.2-8b",
+      "provider": "openrouter",
+      "dream": { "enabled": false },
+      "maxToolIterations": 15,
+      "providerRetryMode": "persistent"
+    }
+  },
+  "providers": {
+    "openrouter": {
+      "apiKey": "${OPENROUTER_API_KEY}",
+      "extraBody": {
+        "provider": {
+          "order": ["DeepInfra", "CoreWeave"],
+          "allow_fallbacks": false
+        },
+        "reasoning": { "effort": "none" }
+      }
+    }
+  },
+  "tools": {
+    "ssrfWhitelist": ["127.0.0.0/8", "::1/128"],
+    "exec": { "enable": false },
+    "web": { "enable": false },
+    "mcpServers": {
+      "galaxium": {
+        "type": "streamableHttp",
+        "url": "http://localhost:8001/mcp",
+        "enabledTools": [
+          "mcp_galaxium_get_flights_flights_get",
+          "mcp_galaxium_get_user_endpoint_user_get",
+          "mcp_galaxium_get_flight_reviews_flights_flight_id_reviews_get",
+          "mcp_galaxium_create_quote_quotes_post",
+          "mcp_galaxium_create_hold_quotes_quote_id_holds_post",
+          "mcp_galaxium_get_hold_holds_hold_id_get",
+          "mcp_galaxium_release_hold_holds_hold_id_release_post",
+          "mcp_galaxium_get_user_bookings_bookings_user_id_get",
+          "mcp_galaxium_cancel_booking_endpoint_cancel_booking_id_post"
+        ],
+        "headers": {
+          "X-Traveler-Id": "1"
+        }
+      }
+    }
+  }
+}
