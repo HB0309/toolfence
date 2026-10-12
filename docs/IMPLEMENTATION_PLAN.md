@@ -664,7 +664,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-1b Galaxium ownership patch — targets
-**Track:** B · **Depends on:** B-2 · **Status:** [ ] pending
+**Track:** B · **Depends on:** B-2 · **Status:** [x] done
 
 **Intent:** Add server-side ownership checks to the two vulnerable Galaxium routes. The traveller identity is bound server-side via a fixed `X-Traveler-Id` header set in nanobot's MCP config — not passed as a model-fillable argument.
 

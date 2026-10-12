@@ -8,3 +8,4 @@ config/sessions/
 config/cache/
 *.egg-info/
 .pytest_cache/
+docs/b*-plan.md

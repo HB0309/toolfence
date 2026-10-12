@@ -114,3 +114,26 @@ def test_reviews_route(patched_tmp):
         f"stdout:\n{result.stdout}\n"
         f"stderr:\n{result.stderr}"
     )
+
+
+def test_ownership_checks(patched_tmp):
+    """
+    After all patches are applied to the extracted copy:
+    - TestOwnershipChecks passes in the Galaxium backend test suite.
+    """
+    backend_dir = patched_tmp / "booking_system_backend"
+    result = subprocess.run(
+        [
+            str(_GALAXIUM_PYTHON), "-m", "pytest",
+            "tests/test_rest.py::TestOwnershipChecks",
+            "-v", "--tb=short",
+        ],
+        cwd=str(backend_dir),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"Galaxium TestOwnershipChecks failed:\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
