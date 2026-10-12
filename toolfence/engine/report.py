@@ -57,7 +57,7 @@ def render_report(summary: ResultSummary) -> str:
     lines.append("")
 
     # ------------------------------------------------------------------
-    # Normal-task results
+    # Normal-task results — aggregate
     # ------------------------------------------------------------------
     lines.append("## Normal-Task Results")
     lines.append("")
@@ -69,6 +69,22 @@ def render_report(summary: ResultSummary) -> str:
     lines.append(f"| Skipped | {nt.skipped} | — |")
     lines.append(f"| **Total** | **{nt.total}** | — |")
     lines.append("")
+
+    # ------------------------------------------------------------------
+    # Normal-task results — per defense × guard_on condition
+    # ------------------------------------------------------------------
+    if summary.normal_conditions:
+        lines.append("### Normal-Task Results by Condition")
+        lines.append("")
+        lines.append("| Defense | Guard | Success | Failed | Skipped | Total | Success% |")
+        lines.append("|---------|-------|--------:|-------:|--------:|------:|---------:|")
+        for nc in summary.normal_conditions:
+            guard_label = "✓" if nc.guard_on else "✗"
+            lines.append(
+                f"| {nc.defense} | {guard_label} | "
+                f"{nc.success} | {nc.failed} | {nc.skipped} | {nc.total} | {nc.success_pct}% |"
+            )
+        lines.append("")
 
     # ------------------------------------------------------------------
     # Security (attack) results

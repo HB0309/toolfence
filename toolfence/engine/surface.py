@@ -342,24 +342,23 @@ class SurfaceScanner:
             name: str = tool.get("name", "")
             if not name:
                 continue
-            # Sanitise name to match the ^[a-z0-9_]+$ pattern expected by SurfaceEntry.
-            # Non-conforming characters are replaced with underscores; result is lowercased.
-            safe_name = _sanitise_name(name)
-            if not safe_name:
+            # Reject names that don't already match ^[a-z0-9_]+$.
+            # We never rewrite names — a name that needs rewriting is wrong input.
+            if not _is_valid_name(name):
                 continue
 
             description: str = tool.get("description") or ""
             method: str = tool.get("method") or "POST"
-            route: str = tool.get("route") or f"{method.upper()} /{safe_name}"
+            route: str = tool.get("route") or f"{method.upper()} /{name}"
 
             # Preserve reviewed values when present; apply heuristic/defaults otherwise.
-            action_class: str = tool.get("action_class") or suggest_action_class(method, safe_name)
+            action_class: str = tool.get("action_class") or suggest_action_class(method, name)
             trust_label: str = tool.get("trust_label") or "first-party"
             sha: str = tool.get("description_sha256") or description_sha256(description)
 
             entries.append(
                 SurfaceEntry(
-                    name=safe_name,
+                    name=name,
                     route=route,
                     action_class=action_class,  # type: ignore[arg-type]
                     trust_label=trust_label,     # type: ignore[arg-type]
@@ -373,9 +372,11 @@ class SurfaceScanner:
 # Internal utilities
 # ---------------------------------------------------------------------------
 
-def _sanitise_name(name: str) -> str:
-    """Lowercase and replace disallowed characters so the name matches ``^[a-z0-9_]+$``."""
-    cleaned = re.sub(r"[^a-z0-9_]", "_", name.lower())
-    # Collapse multiple consecutive underscores to one, strip leading/trailing underscores
-    cleaned = re.sub(r"_+", "_", cleaned).strip("_")
-    return cleaned
+def _is_valid_name(name: str) -> bool:
+    """Return ``True`` if *name* already matches ``^[a-z0-9_]+$``.
+
+    Names that do not conform are **rejected** (skipped silently) — never
+    rewritten.  This ensures ``surface.json`` always contains exactly the
+    names that nanobot uses, with no silent mangling.
+    """
+    return bool(re.fullmatch(r"[a-z0-9_]+", name))

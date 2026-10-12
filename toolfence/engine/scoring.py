@@ -59,6 +59,18 @@ class NormalTaskCounts(BaseModel):
     success_pct: float = 0.0       # over non-skipped trials
 
 
+class NormalConditionSummary(BaseModel):
+    """Normal-task counts for one defense × guard_on condition."""
+
+    defense: str
+    guard_on: bool
+    success: int = 0
+    failed: int = 0
+    skipped: int = 0
+    total: int = 0
+    success_pct: float = 0.0
+
+
 class ConditionSummary(BaseModel):
     """Summary for one evaluation condition (channel × defense × guard_on)."""
 
@@ -75,6 +87,7 @@ class ResultSummary(BaseModel):
     run_id: str
     conditions: list[ConditionSummary]
     normal_tasks: NormalTaskCounts
+    normal_conditions: list[NormalConditionSummary] = []  # per defense × guard_on breakdown
     total_trials: int
     disclaimer: str                 # always DISCLAIMER (ENG-8)
     timestamp: str = ""             # ISO-8601 set by the runner; empty string when not set
@@ -103,12 +116,13 @@ def aggregate(trial_records: list[TrialRecord], run_id: str) -> ResultSummary:
     normal_trials = [t for t in trial_records if t.kind == "normal"]
 
     conditions = _aggregate_attack(attack_trials)
-    normal_tasks = _aggregate_normal(normal_trials)
+    normal_tasks, normal_conditions = _aggregate_normal(normal_trials)
 
     return ResultSummary(
         run_id=run_id,
         conditions=conditions,
         normal_tasks=normal_tasks,
+        normal_conditions=normal_conditions,
         total_trials=len(trial_records),
         disclaimer=DISCLAIMER,
     )
@@ -182,27 +196,55 @@ def _aggregate_attack(
     return conditions
 
 
-def _aggregate_normal(normal_trials: list[TrialRecord]) -> NormalTaskCounts:
-    """Aggregate normal-task trials into NormalTaskCounts."""
-    success = 0
-    failed = 0
-    skipped = 0
+def _aggregate_normal(
+    normal_trials: list[TrialRecord],
+) -> tuple[NormalTaskCounts, list[NormalConditionSummary]]:
+    """Aggregate normal-task trials.
+
+    Returns a tuple of:
+    - ``NormalTaskCounts`` — flat aggregate across all conditions.
+    - ``list[NormalConditionSummary]`` — per ``(defense, guard_on)`` breakdown.
+    """
+    # Per-condition groups keyed by (defense, guard_on)
+    groups: dict[tuple, dict] = defaultdict(lambda: {"success": 0, "failed": 0, "skipped": 0})
 
     for trial in normal_trials:
+        key = (trial.defense, trial.guard_on)
+        g = groups[key]
         if trial.verdict == "skipped":
-            skipped += 1
+            g["skipped"] += 1
         elif trial.task_success is True:
-            success += 1
+            g["success"] += 1
         else:
-            failed += 1
+            g["failed"] += 1
 
-    total = success + failed + skipped
-    pct_base = total - skipped
+    # Build per-condition summaries
+    normal_conditions: list[NormalConditionSummary] = []
+    for (defense, guard_on), g in sorted(groups.items(), key=lambda x: (x[0][0], x[0][1])):
+        total = g["success"] + g["failed"] + g["skipped"]
+        pct_base = total - g["skipped"]
+        normal_conditions.append(NormalConditionSummary(
+            defense=defense,
+            guard_on=guard_on,
+            success=g["success"],
+            failed=g["failed"],
+            skipped=g["skipped"],
+            total=total,
+            success_pct=_pct(g["success"], pct_base),
+        ))
 
-    return NormalTaskCounts(
-        success=success,
-        failed=failed,
-        skipped=skipped,
-        total=total,
-        success_pct=_pct(success, pct_base),
+    # Flat aggregate (sum across all conditions)
+    agg_success = sum(g["success"] for g in groups.values())
+    agg_failed  = sum(g["failed"]  for g in groups.values())
+    agg_skipped = sum(g["skipped"] for g in groups.values())
+    agg_total   = agg_success + agg_failed + agg_skipped
+    agg_pct_base = agg_total - agg_skipped
+
+    flat = NormalTaskCounts(
+        success=agg_success,
+        failed=agg_failed,
+        skipped=agg_skipped,
+        total=agg_total,
+        success_pct=_pct(agg_success, agg_pct_base),
     )
+    return flat, normal_conditions

@@ -9,7 +9,7 @@
       "description_sha256": "880a00adfb91b04f367963b65a913e7b68f4ba4b584f3de2b3484f93f78f8db9"
     },
     {
-      "name": "mcp_galaxium_create_hold_quotes__quote_id__holds_post",
+      "name": "mcp_galaxium_create_hold_quotes_quote_id_holds_post",
       "route": "POST /quotes/{quote_id}/holds",
       "action_class": "state-changing",
       "trust_label": "first-party",

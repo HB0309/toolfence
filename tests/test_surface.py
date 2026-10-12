@@ -121,7 +121,7 @@ def test_known_tool_action_class_returned() -> None:
     )
     assert get_action_class(surface, "mcp_galaxium_get_flights_flights_get") == "read"
     assert get_action_class(surface, "mcp_galaxium_cancel_booking__booking_id__post") == "irreversible"
-    assert get_action_class(surface, "mcp_galaxium_create_hold_quotes__quote_id__holds_post") == "state-changing"
+    assert get_action_class(surface, "mcp_galaxium_create_hold_quotes_quote_id_holds_post") == "state-changing"
 
 
 # ===========================================================================
@@ -372,3 +372,47 @@ def test_a1_scan_json_all_action_classes_represented() -> None:
         assert re.fullmatch(r"[0-9a-f]{64}", entry.description_sha256), (
             f"description_sha256 for {entry.name!r} is malformed"
         )
+
+
+# ===========================================================================
+# Fix 2: scanner rejects bad names; accepts real spike names
+# ===========================================================================
+
+def test_scan_json_rejects_bad_name() -> None:
+    """scan_json silently drops a name with a hyphen — does NOT rename it (Fix 2)."""
+    scanner = SurfaceScanner()
+    tool_list = [
+        {"name": "my-bad-tool", "description": "Has a hyphen.", "method": "GET", "route": "GET /bad"},
+    ]
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as f:
+        json.dump({"tools": tool_list}, f)
+        tmp_path = f.name
+
+    surface = scanner.scan_json(tmp_path)
+    names = [e.name for e in surface.tools]
+    # Must not appear under any form (not renamed to my_bad_tool either)
+    assert "my-bad-tool" not in names, "Hyphenated name should be rejected"
+    assert "my_bad_tool" not in names, "Scanner must not silently rename bad names"
+    assert len(surface.tools) == 0, "No valid tools in list — surface should be empty"
+
+
+def test_scan_json_accepts_real_spike_name() -> None:
+    """scan_json accepts the real single-underscore create_hold name from spike traces (Fix 2)."""
+    scanner = SurfaceScanner()
+    real_name = "mcp_galaxium_create_hold_quotes_quote_id_holds_post"
+    tool_list = [
+        {"name": real_name, "description": "Create a hold.", "method": "POST",
+         "route": "POST /quotes/{quote_id}/holds"},
+    ]
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as f:
+        json.dump({"tools": tool_list}, f)
+        tmp_path = f.name
+
+    surface = scanner.scan_json(tmp_path)
+    assert len(surface.tools) == 1
+    assert surface.tools[0].name == real_name
+    assert surface.tools[0].action_class == "state-changing"  # POST, no keyword
