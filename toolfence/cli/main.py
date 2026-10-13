@@ -65,6 +65,15 @@ def main() -> None:
     ci_p.add_argument("--live", default=None, metavar="PATH",
                       help="Path to a live tool-list JSON (default: re-read surface itself).")
 
+    # serve (dashboard)
+    serve_p = sub.add_parser("serve", help="Start the read-only results dashboard server.")
+    serve_p.add_argument("--host", default="localhost", metavar="HOST",
+                         help="Host to listen on (default: localhost).")
+    serve_p.add_argument("--port", type=int, default=8080, metavar="PORT",
+                         help="Port to listen on (default: 8080).")
+    serve_p.add_argument("--results-dir", default="results", metavar="DIR",
+                         help="Directory of trial record JSON files (default: results/).")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -79,6 +88,8 @@ def main() -> None:
         _cmd_report(args.results_dir)
     elif args.command == "ci-check":
         _cmd_ci_check(args.surface, args.live)
+    elif args.command == "serve":
+        _cmd_serve(args.host, args.port, args.results_dir)
     else:
         print(f"Unknown command: {args.command!r}", file=sys.stderr)
         sys.exit(1)
@@ -266,6 +277,16 @@ def _cmd_report(results_dir: str) -> None:
     sys.stdout.buffer.flush()
 
     sys.exit(0)
+
+
+# ---------------------------------------------------------------------------
+# serve (dashboard)
+# ---------------------------------------------------------------------------
+
+def _cmd_serve(host: str, port: int, results_dir: str) -> None:
+    """Start the read-only results dashboard server."""
+    from toolfence.cli.dashboard.server import run_server
+    run_server(host=host, port=port, results_dir=Path(results_dir))
 
 
 # ---------------------------------------------------------------------------
