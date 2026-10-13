@@ -701,7 +701,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-3 nanobot Guard wiring — integration
-**Track:** B · **Depends on:** S-2 (proxy stub), C-2 (real `GuardedProxy`; B-3 can start against the stub and upgrade when C-2 lands) · **Status:** [ ] pending
+**Track:** B · **Depends on:** S-2 (proxy stub), C-2 (real `GuardedProxy`; B-3 can start against the stub and upgrade when C-2 lands) · **Status:** [x] done
 
 **Intent:** Implement the post-load proxy installer in `integration/installer.py` and the two Guard-wired launcher scripts. The installer wraps **every** tool in the registry — not just `mcp_*` — so that `read_file` and other built-in tools are captured for file-label provenance. No nanobot source files are modified.
 
