@@ -1,0 +1,11 @@
+{
+  "channels": ["user-input", "tool-result"],
+  "defenses": [
+    {"name": "none",          "guard_on": false, "datamark_on": false},
+    {"name": "none",          "guard_on": true,  "datamark_on": false},
+    {"name": "datamarking",   "guard_on": false, "datamark_on": true},
+    {"name": "datamarking",   "guard_on": true,  "datamark_on": true},
+    {"name": "instructional", "guard_on": false, "datamark_on": false},
+    {"name": "instructional", "guard_on": true,  "datamark_on": false}
+  ]
+}
