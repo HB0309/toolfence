@@ -6,11 +6,13 @@ scan <path>                      Scan a surface JSON and print a tool table.
 run  --surface <path>            Run the evaluation matrix (scripted adapter).
      [--output <dir>]
 report <results-dir>             Render a markdown report from trial records.
+ci-check --surface <path>        Surface-diff CI check (compares surface file
+         [--live <path>]          against a live tool list JSON, or itself).
 
 Import boundary
 ---------------
-This module may import from toolfence.engine, toolfence.guard, toolfence.contracts.
-It must NOT import toolfence.integration or nanobot.
+This module may import from toolfence.engine, toolfence.guard, toolfence.contracts,
+toolfence.integration.  It must NOT import nanobot directly.
 """
 
 from __future__ import annotations
@@ -53,6 +55,16 @@ def main() -> None:
     report_p.add_argument("results_dir", nargs="?", default="results", metavar="DIR",
                           help="Directory containing trial record JSON files (default: results/).")
 
+    # ci-check
+    ci_p = sub.add_parser(
+        "ci-check",
+        help="Surface-diff CI check: compare surface.json against a live tool list.",
+    )
+    ci_p.add_argument("--surface", required=True, metavar="PATH",
+                      help="Path to the committed surface.json.")
+    ci_p.add_argument("--live", default=None, metavar="PATH",
+                      help="Path to a live tool-list JSON (default: re-read surface itself).")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -65,6 +77,8 @@ def main() -> None:
         _cmd_run(args.surface, args.output)
     elif args.command == "report":
         _cmd_report(args.results_dir)
+    elif args.command == "ci-check":
+        _cmd_ci_check(args.surface, args.live)
     else:
         print(f"Unknown command: {args.command!r}", file=sys.stderr)
         sys.exit(1)
@@ -252,6 +266,45 @@ def _cmd_report(results_dir: str) -> None:
     sys.stdout.buffer.flush()
 
     sys.exit(0)
+
+
+# ---------------------------------------------------------------------------
+# ci-check
+# ---------------------------------------------------------------------------
+
+def _cmd_ci_check(surface_path: str, live_path: "str | None") -> None:
+    """Run the surface-diff CI check and exit with the result code."""
+    from toolfence.cli.ci_checks import surface_diff_check
+
+    # If no live tool list supplied, compare the surface against itself.
+    # This still runs the description-hash drift check (catches hand-edits).
+    if live_path is not None:
+        try:
+            live_data = json.loads(Path(live_path).read_text(encoding="utf-8"))
+            live_tool_list = (
+                live_data if isinstance(live_data, list)
+                else live_data.get("tools", [])
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"Error loading live tool list {live_path!r}: {exc}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Re-read the surface itself as the "live" list so the hash check runs.
+        try:
+            raw = json.loads(Path(surface_path).read_text(encoding="utf-8"))
+            live_tool_list = raw.get("tools", []) if isinstance(raw, dict) else raw
+        except Exception as exc:  # noqa: BLE001
+            print(f"Error loading surface file {surface_path!r}: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    exit_code, message = surface_diff_check(surface_path, live_tool_list)
+
+    if exit_code == 0:
+        print(f"CI surface-diff check passed: {message}")
+    else:
+        print(f"CI surface-diff check FAILED:\n{message}", file=sys.stderr)
+
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
