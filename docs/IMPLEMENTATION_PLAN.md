@@ -647,7 +647,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-1a Galaxium reviews patch — targets
-**Track:** B · **Depends on:** B-2 (setup script so patches can be applied) · **Status:** [ ] pending
+**Track:** B · **Depends on:** B-2 (setup script so patches can be applied) · **Status:** [x] done
 
 **Intent:** Add the reviews route + seeded synthetic data to Galaxium as a committed patch file. This is the untrusted-content channel.
 
@@ -664,7 +664,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-1b Galaxium ownership patch — targets
-**Track:** B · **Depends on:** B-2 · **Status:** [ ] pending
+**Track:** B · **Depends on:** B-2 · **Status:** [x] done
 
 **Intent:** Add server-side ownership checks to the two vulnerable Galaxium routes. The traveller identity is bound server-side via a fixed `X-Traveler-Id` header set in nanobot's MCP config — not passed as a model-fillable argument.
 
@@ -682,7 +682,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-2 Setup script and nanobot config — targets
-**Track:** B · **Depends on:** S-1 · **Status:** [ ] pending
+**Track:** B · **Depends on:** S-1 · **Status:** [x] done
 
 **Intent:** Write the setup script that fetches both targets at their pinned commits and applies patches. Commit the eval and gateway nanobot configs. B-1a and B-1b depend on this because the patches are applied by the setup script.
 
