@@ -18,5 +18,23 @@ jobs:
         run: pytest tests/ --skip-network
 
       - name: Surface-diff CI check
-        run: toolfence ci-check --surface results/surface.json
-        continue-on-error: true   # post comment even on failure (B-5 surface.json may not exist yet)
+        id: surface_check
+        run: |
+          toolfence ci-check --surface results/surface.json > /tmp/ci_check_output.txt 2>&1
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+          cat /tmp/ci_check_output.txt
+        continue-on-error: true
+
+      - name: Post surface-diff failure comment
+        if: github.event_name == 'pull_request' && steps.surface_check.outputs.exit_code != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('/tmp/ci_check_output.txt', 'utf8');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## WARNING: ToolFence Surface-Diff Check Failed\n\`\`\`\n${output}\n\`\`\``
+            });
