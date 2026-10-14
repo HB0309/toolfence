@@ -123,7 +123,7 @@ def _mcp_urls_are_all_loopback(runtime_config: Any) -> bool:
         return False
 
     urls: list[str] = []
-    for srv in (servers or []):
+    for srv in (servers or {}).values():
         url = getattr(srv, "url", None) or ""
         if url:
             urls.append(url)
@@ -554,6 +554,9 @@ class NanobotAdapter:
             hook: Any = None
             connect_ok: bool = False
 
+            _mcp_mod: Any = None
+            _orig_transport_kwargs: Any = None
+
             try:
                 # DNS pinning is disabled for loopback-only MCP servers —
                 # PinnedDNSAsyncTransport uses a class-level asyncio.Lock that
@@ -564,12 +567,7 @@ class NanobotAdapter:
                     import nanobot.agent.tools.mcp as _mcp_mod  # type: ignore[import]
                     _orig_transport_kwargs = _mcp_mod._pinned_transport_kwargs  # type: ignore[attr-defined]
                     _mcp_mod._pinned_transport_kwargs = lambda: {"transport": httpx.AsyncHTTPTransport()}  # type: ignore[attr-defined]
-                    try:
-                        await mcp_provider.connect()
-                    finally:
-                        _mcp_mod._pinned_transport_kwargs = _orig_transport_kwargs  # type: ignore[attr-defined]
-                else:
-                    await mcp_provider.connect()
+                await mcp_provider.connect()
                 connect_ok = True
 
                 install_guard(
@@ -618,6 +616,12 @@ class NanobotAdapter:
                 finally:
                     if connect_ok:
                         await mcp_provider.aclose()
+                    # Restore original transport factory after the full turn
+                    # (including any reconnects) so the plain transport covers
+                    # any handle_get_stream reconnects during the turn, not
+                    # just the initial connect().
+                    if _mcp_mod is not None and _orig_transport_kwargs is not None:
+                        _mcp_mod._pinned_transport_kwargs = _orig_transport_kwargs  # type: ignore[attr-defined]
 
             # ----------------------------------------------------------------
             # Build Trace from hook output (hook may be None on early error).

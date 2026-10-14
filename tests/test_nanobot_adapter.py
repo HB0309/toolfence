@@ -355,6 +355,46 @@ def test_tool_result_probe_seeds_before_turn_cleans_after(monkeypatch, reviews_d
 
 
 # ---------------------------------------------------------------------------
+# Test 8 — _mcp_urls_are_all_loopback unit tests
+#
+# We need a runtime_config object whose shape mirrors what nanobot's
+# _load_runtime_config / Config.model_validate produces.  Importing nanobot's
+# Config requires its full dep chain (loguru, tzlocal, …).  Instead we build
+# lightweight SimpleNamespace stubs that exercise exactly the attribute paths
+# _mcp_urls_are_all_loopback reads: .tools.mcp_servers (a dict) and each
+# value's .url field.  The stubs match the MCPServerConfig shape from
+# nanobot/config/schema.py without needing to import nanobot at all.
+# ---------------------------------------------------------------------------
+
+
+def _make_loopback_config(*urls: str) -> Any:
+    """Return a minimal stub runtime_config with mcp_servers having *urls*."""
+    from types import SimpleNamespace
+
+    servers = {
+        f"srv{i}": SimpleNamespace(url=url)
+        for i, url in enumerate(urls)
+    }
+    return SimpleNamespace(tools=SimpleNamespace(mcp_servers=servers))
+
+
+def test_mcp_urls_are_all_loopback_true_for_eval_config():
+    """Mirrors config/nanobot.eval.json (localhost:8001) → helper returns True."""
+    from toolfence.integration.nanobot_adapter import _mcp_urls_are_all_loopback
+
+    cfg = _make_loopback_config("http://localhost:8001/mcp")
+    assert _mcp_urls_are_all_loopback(cfg) is True
+
+
+def test_mcp_urls_are_all_loopback_false_for_remote_url():
+    """Replacing the MCP URL with a non-loopback host → helper returns False."""
+    from toolfence.integration.nanobot_adapter import _mcp_urls_are_all_loopback
+
+    cfg = _make_loopback_config("http://mcp.example.com:8001/mcp")
+    assert _mcp_urls_are_all_loopback(cfg) is False
+
+
+# ---------------------------------------------------------------------------
 # Live tests — skipped unless TOOLFENCE_LIVE=1
 # ---------------------------------------------------------------------------
 
