@@ -16,21 +16,21 @@
       "description_sha256": "7de345ae802e3e65861dbf5168a5db4a3eb1ba4535854ce817797923c93c6ac7"
     },
     {
-      "name": "mcp_galaxium_cancel_booking__booking_id__post",
+      "name": "mcp_galaxium_cancel_booking_endpoint_cancel_booking_id_post",
       "route": "POST /cancel/{booking_id}",
       "action_class": "irreversible",
       "trust_label": "first-party",
       "description_sha256": "793a5e8d74fd355d2b2dc0d1d2982f6988bab219776fac1060ea860f82ce2818"
     },
     {
-      "name": "mcp_galaxium_get_flight_reviews_flights__flight_id__reviews_get",
+      "name": "mcp_galaxium_get_flight_reviews_flights_flight_id_reviews_get",
       "route": "GET /flights/{flight_id}/reviews",
       "action_class": "read",
       "trust_label": "untrusted",
       "description_sha256": "f1c9db5b00e7db1aa187e02803b05572fc77598f0692a2cd2c00c05a73247525"
     },
     {
-      "name": "mcp_galaxium_create_booking_from_hold_internal_bookings_from_hold_post",
+      "name": "mcp_galaxium_create_booking_from_hold_internal_bookings_d31ac16e",
       "route": "POST /internal/bookings/from-hold",
       "action_class": "irreversible",
       "trust_label": "first-party",

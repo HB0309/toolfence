@@ -48,6 +48,31 @@ from toolfence.contracts.surface import SurfaceEntry, SurfaceFile
 # ---------------------------------------------------------------------------
 _EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()  # 64 lowercase hex chars
 
+# ---------------------------------------------------------------------------
+# MCP tool name sanitise+truncate rule (copied from nanobot — no import)
+# ---------------------------------------------------------------------------
+_MAX_MCP_TOOL_NAME = 64
+_HASH_LEN = 8
+_SANITIZE_RE = re.compile(r"[^a-z0-9_]+")
+
+
+def _mcp_tool_name(server_name: str, operation_id: str) -> str:
+    """Return the nanobot-style MCP tool name for *server_name* + *operation_id*.
+
+    Mirrors nanobot's ``_sanitize_mcp_tool_name`` + ``_limit_tool_name`` rules
+    without importing from nanobot (AGENTS.md hard boundary).
+
+    The raw name is ``mcp_{server_name}_{operation_id}`` lowercased with every
+    run of characters outside ``[a-z0-9_]`` collapsed to a single ``_``.  If the
+    result is longer than 64 characters it is truncated to 55 chars and an 8-char
+    SHA-1 suffix is appended (``{raw[:55]}_{sha1[:8]}`` = 64 chars total).
+    """
+    raw = _SANITIZE_RE.sub("_", f"mcp_{server_name}_{operation_id}".lower())
+    if len(raw) <= _MAX_MCP_TOOL_NAME:
+        return raw
+    digest = hashlib.sha1(raw.encode()).hexdigest()[:_HASH_LEN]
+    return f"{raw[:_MAX_MCP_TOOL_NAME - _HASH_LEN - 1]}_{digest}"
+
 
 # ---------------------------------------------------------------------------
 # Public helpers
@@ -204,7 +229,7 @@ class SurfaceScanner:
     # scan_openapi
     # ------------------------------------------------------------------
 
-    def scan_openapi(self, source: str | Path) -> SurfaceFile:
+    def scan_openapi(self, source: str | Path, *, server_name: str = "") -> SurfaceFile:
         """Produce a ``SurfaceFile`` draft from an OpenAPI spec.
 
         Parameters
@@ -212,6 +237,12 @@ class SurfaceScanner:
         source:
             Either a URL (``http://…`` or ``https://…``) or a local file path
             to a JSON OpenAPI spec.  The spec must be OpenAPI 3.x JSON.
+        server_name:
+            MCP server name used as the middle segment of the tool name when an
+            ``operationId`` is present (e.g. ``"galaxium"`` →
+            ``mcp_galaxium_<operationId>``).  Defaults to ``""`` (empty), which
+            produces ``mcp__<operationId>`` — useful for draft scanning where the
+            server name is not yet known.
 
         Returns
         -------
@@ -220,11 +251,40 @@ class SurfaceScanner:
 
         Notes
         -----
-        Each OpenAPI path+method combination becomes one tool entry.  The tool
-        name is derived by joining the HTTP method and path with underscores,
-        stripping ``{…}`` braces from path parameters, and lowercasing:
-        ``POST /cancel/{booking_id}`` → ``post_cancel_booking_id``.
-        The ``route`` field stores the original ``"METHOD /path"`` string.
+        **Tool name derivation (two paths):**
+
+        1. If the operation carries an ``operationId``, the tool name is derived
+           via ``_mcp_tool_name(server_name, operationId)`` — the same
+           sanitise-and-truncate rule that nanobot applies.  This path produces
+           names that match nanobot's registry exactly for ``fastapi_mcp``-backed
+           servers.
+
+        2. If no ``operationId`` is present, the name falls back to joining the
+           HTTP method and path segments with underscores, stripping ``{…}``
+           braces from path parameters, and lowercasing:
+           ``POST /cancel/{booking_id}`` → ``post_cancel_booking_id``.
+
+        The ``route`` field always stores the original ``"METHOD /path"`` string.
+
+        **Description concatenation:**
+
+        When both ``summary`` and ``description`` fields are present, the tool
+        description is assembled as ``"{summary}\\n\\n{description}"``, mirroring
+        how ``fastapi_mcp`` builds the MCP tool description.  When only one field
+        is present, that field is used alone.
+
+        Limitations
+        -----------
+        ``fastapi_mcp`` appends a ``### Responses:`` block built from the
+        operation's response schemas after the human-readable description.  This
+        block cannot be reconstructed from the OpenAPI spec alone, so the
+        ``description_sha256`` values produced by ``scan_openapi`` will still
+        differ from what nanobot reports for ``fastapi_mcp``-backed servers by
+        that suffix.
+
+        For bit-exact hashes (matching nanobot's live descriptions), use
+        ``scan_mcp(url)`` against a running server, or ``scan_json`` with a tool
+        list captured directly from the MCP endpoint.
         """
         spec = self._load_json_source(str(source))
         tool_list: list[dict[str, Any]] = []
@@ -233,16 +293,25 @@ class SurfaceScanner:
             for method, operation in path_item.items():
                 if method.lower() not in ("get", "post", "put", "patch", "delete"):
                     continue
-                description = (
-                    operation.get("description")
-                    or operation.get("summary")
-                    or ""
-                )
-                # Build a tool name: method + path segments, lowercased, braces stripped
-                clean_path = path.replace("{", "").replace("}", "")
-                segments = [s for s in clean_path.split("/") if s]
-                name_parts = [method.lower()] + segments
-                tool_name = "_".join(name_parts).replace("-", "_")
+                # Mirror fastapi_mcp's description assembly: summary + "\n\n" + description.
+                # response_info is not included — see Limitations in the docstring.
+                summary = operation.get("summary") or ""
+                body = operation.get("description") or ""
+                if summary and body:
+                    description = f"{summary}\n\n{body}"
+                elif summary:
+                    description = summary
+                else:
+                    description = body
+                # Derive tool name from operationId when present; fall back to path segments.
+                operation_id = operation.get("operationId")
+                if operation_id:
+                    tool_name = _mcp_tool_name(server_name, operation_id)
+                else:
+                    clean_path = path.replace("{", "").replace("}", "")
+                    segments = [s for s in clean_path.split("/") if s]
+                    name_parts = [method.lower()] + segments
+                    tool_name = "_".join(name_parts).replace("-", "_")
                 tool_list.append({
                     "name": tool_name,
                     "description": description,
