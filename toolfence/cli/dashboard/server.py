@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -48,6 +49,10 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._serve_file(_STATIC_DIR / "index.html", "text/html; charset=utf-8")
         elif path.startswith("/static/"):
             filename = path[len("/static/"):]
+            resolved = (_STATIC_DIR / filename).resolve()
+            if not resolved.is_relative_to(_STATIC_DIR.resolve()):
+                self._not_found()
+                return
             self._serve_file(_STATIC_DIR / filename, _mime(filename))
         elif path == "/api/results":
             self._serve_results()
@@ -72,7 +77,18 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _serve_results(self) -> None:
-        records = _load_records(self.results_dir)
+        from toolfence.contracts.trial import TrialRecord
+        raw_pairs = _load_records_with_names(self.results_dir)
+        records = []
+        for filename, r in raw_pairs:
+            try:
+                TrialRecord.model_validate(r)
+                records.append(r)
+            except Exception:  # noqa: BLE001
+                print(
+                    f"Warning: {filename} is not a valid TrialRecord — skipped",
+                    file=sys.stderr,
+                )
         body = json.dumps(records, default=str).encode("utf-8")
         self._send_json(body)
 
@@ -130,6 +146,19 @@ def _load_records(results_dir: Path) -> list[dict]:
         except Exception:  # noqa: BLE001
             pass
     return records
+
+
+def _load_records_with_names(results_dir: Path) -> list[tuple[str, dict]]:
+    """Like _load_records but returns (filename, dict) pairs."""
+    pairs: list[tuple[str, dict]] = []
+    if not results_dir.is_dir():
+        return pairs
+    for jf in sorted(results_dir.glob("*.json")):
+        try:
+            pairs.append((jf.name, json.loads(jf.read_text(encoding="utf-8"))))
+        except Exception:  # noqa: BLE001
+            pass
+    return pairs
 
 
 def make_server(host: str, port: int, results_dir: Path) -> HTTPServer:

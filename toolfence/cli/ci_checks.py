@@ -15,6 +15,7 @@ May import from ``toolfence.engine``, ``toolfence.contracts``,
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,9 @@ from toolfence.integration.installer import verify_guard_invariant
 # ---------------------------------------------------------------------------
 # surface_diff_check
 # ---------------------------------------------------------------------------
+
+_RISK: dict[str, int] = {"read": 0, "state-changing": 1, "irreversible": 2}
+
 
 def surface_diff_check(
     surface_path: "str | Path",
@@ -82,13 +86,20 @@ def surface_diff_check(
         name = tool.get("name", "")
         if not name or name not in stored_names:
             continue  # unknown tools already reported above
-        method = tool.get("method") or "POST"
+        route = tool.get("route", "")
+        method = tool.get("method") or (route.split()[0].upper() if route else "POST")
         suggested = suggest_action_class(method, name)
         stored = get_action_class(surface, name)
-        if suggested != stored:
+        if _RISK.get(suggested, 1) > _RISK.get(stored, 1):
             findings.append(
                 f"Action-class mismatch for '{name}': "
                 f"surface has '{stored}', live heuristic suggests '{suggested}'"
+            )
+        elif suggested != stored:
+            print(
+                f"Warning: '{name}' stored as '{stored}', "
+                f"heuristic suggests '{suggested}' (reviewed override — ok)",
+                file=sys.stderr,
             )
 
     # --- Failure type 3: changed description hash ---

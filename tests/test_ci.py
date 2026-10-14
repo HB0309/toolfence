@@ -203,6 +203,73 @@ def test_guard_wiring_check_bare_tool() -> None:
 
 
 # ===========================================================================
+# FIX 2a — action-class safe override (stored more restrictive than heuristic)
+# ===========================================================================
+
+def test_surface_diff_action_class_override_ok() -> None:
+    """Stored 'irreversible' where heuristic suggests 'state-changing' → exit 0 (safe upgrade)."""
+    tool_name = "mcp_galaxium_create_quote_post"
+    description = "Creates a quote."
+
+    # Reviewer deliberately stored "irreversible" for a POST tool with no irreversible keyword.
+    # Heuristic would suggest "state-changing" — this is a safe, more-restrictive override.
+    surface = _make_surface(
+        SurfaceEntry(
+            name=tool_name,
+            route="POST /quote",
+            action_class="irreversible",  # type: ignore[arg-type]  ← deliberate upgrade
+            trust_label="first-party",  # type: ignore[arg-type]
+            description_sha256=description_sha256(description),
+        )
+    )
+    surface_path = _write_surface(surface)
+
+    live_tool_list = [
+        {"name": tool_name, "description": description, "method": "POST"},
+    ]
+
+    exit_code, message = surface_diff_check(surface_path, live_tool_list)
+
+    assert exit_code == 0, (
+        f"Expected exit 0 for safe override (stored more restrictive), got {exit_code}. "
+        f"Message: {message}"
+    )
+
+
+# ===========================================================================
+# FIX 2b — method extracted from route field (no "method" key in live dict)
+# ===========================================================================
+
+def test_surface_diff_method_from_route() -> None:
+    """Live tool has 'route': 'GET /flights' but no 'method' key → extracted as GET → exit 0."""
+    tool_name = "mcp_galaxium_get_flights_flights_get"
+    description = "Lists available flights."
+
+    surface = _make_surface(
+        SurfaceEntry(
+            name=tool_name,
+            route="GET /flights",
+            action_class="read",  # type: ignore[arg-type]
+            trust_label="first-party",  # type: ignore[arg-type]
+            description_sha256=description_sha256(description),
+        )
+    )
+    surface_path = _write_surface(surface)
+
+    # No "method" key — method must be extracted from "route"
+    live_tool_list = [
+        {"name": tool_name, "description": description, "route": "GET /flights"},
+    ]
+
+    exit_code, message = surface_diff_check(surface_path, live_tool_list)
+
+    assert exit_code == 0, (
+        f"Expected exit 0 when method is extracted from route (GET → read class), "
+        f"got {exit_code}. Message: {message}"
+    )
+
+
+# ===========================================================================
 # Bonus — clean surface returns exit 0
 # ===========================================================================
 

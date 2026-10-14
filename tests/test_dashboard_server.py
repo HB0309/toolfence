@@ -189,3 +189,114 @@ def test_serve_subcommand_in_help() -> None:
     assert "serve" in result.stdout, (
         f"Expected 'serve' in toolfence --help output.\nstdout: {result.stdout}"
     )
+
+
+# ---------------------------------------------------------------------------
+# FIX 1: path traversal
+# ---------------------------------------------------------------------------
+
+def test_path_traversal_blocked(tmp_path: Path) -> None:
+    """GET /static/../../../../pyproject.toml must return 404 (path traversal blocked)."""
+    import http.client
+    import socket
+
+    port = _free_port()
+    proc = subprocess.Popen(
+        [
+            _PYTHON, "-m", "toolfence", "serve",
+            "--host", "127.0.0.1",
+            "--port", str(port),
+            "--results-dir", str(tmp_path),
+        ],
+        cwd=str(_REPO_ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    # Wait for server to start
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1):
+                break
+        except OSError:
+            time.sleep(0.1)
+
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        # Send traversal path literally — http.client does NOT normalise ".."
+        conn.request("GET", "/static/../../../../pyproject.toml")
+        resp = conn.getresponse()
+        assert resp.status == 404, (
+            f"Expected 404 for path traversal attempt, got {resp.status}"
+        )
+        conn.close()
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+# ---------------------------------------------------------------------------
+# FIX 3: /api/results excludes non-TrialRecord JSON
+# ---------------------------------------------------------------------------
+
+def test_api_results_excludes_non_trial_records(tmp_path: Path) -> None:
+    """GET /api/results must include valid TrialRecords only; surface.json shape is excluded."""
+    import shutil
+
+    # Copy one valid TrialRecord fixture into tmp_path
+    shutil.copy(_FIXTURE_DIR / "run-01.json", tmp_path / "run-01.json")
+
+    # Write a non-TrialRecord JSON file (surface.json shape)
+    surface_like = {"version": 1, "tools": []}
+    (tmp_path / "surface.json").write_text(
+        json.dumps(surface_like), encoding="utf-8"
+    )
+
+    port = _free_port()
+    proc = subprocess.Popen(
+        [
+            _PYTHON, "-m", "toolfence", "serve",
+            "--host", "127.0.0.1",
+            "--port", str(port),
+            "--results-dir", str(tmp_path),
+        ],
+        cwd=str(_REPO_ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    base_url = f"http://127.0.0.1:{port}"
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        try:
+            urllib.request.urlopen(base_url + "/api/results", timeout=1)
+            break
+        except Exception:  # noqa: BLE001
+            time.sleep(0.1)
+
+    try:
+        status, body = _get(base_url + "/api/results")
+        assert status == 200, f"Expected 200 from GET /api/results, got {status}"
+        records = json.loads(body)
+        assert isinstance(records, list), "Expected JSON array"
+        assert len(records) == 1, (
+            f"Expected exactly 1 record (valid TrialRecord only), got {len(records)}"
+        )
+        # Confirm the surface-shaped file is not in the results
+        for rec in records:
+            assert "version" not in rec or "trial_id" in rec, (
+                "surface.json shape should not appear in /api/results"
+            )
+        assert records[0].get("trial_id") == "spike-run-01", (
+            "Expected the valid TrialRecord (spike-run-01) in results"
+        )
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
