@@ -501,7 +501,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### A-1 Surface scanner — engine
-**Track:** A · **Depends on:** S-2 · **Status:** [ ] pending
+**Track:** A · **Depends on:** S-2 · **Status:** [x] done
 
 **Intent:** Implement the surface scanner for all three source types; SHA-256 description hashing; action-class heuristics.
 
