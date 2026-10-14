@@ -455,6 +455,46 @@ def test_scan_openapi_uses_operation_id() -> None:
     assert surface.tools[0].action_class == "irreversible"  # name contains "cancel"
 
 
+def test_scan_openapi_operation_id_with_double_underscores() -> None:
+    """Double underscores in a raw FastAPI operationId are collapsed to one underscore.
+
+    FastAPI encodes path parameters with __ (e.g. {booking_id} becomes
+    __booking_id__).  The two-step sanitiser must collapse those so the
+    resulting tool name matches what nanobot registers.
+    """
+    # Raw FastAPI operationId — note __booking_id__ around the path param
+    raw_operation_id = "cancel_booking_endpoint_cancel__booking_id__post"
+    openapi_spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Test", "version": "1.0"},
+        "paths": {
+            "/cancel/{booking_id}": {
+                "post": {
+                    "operationId": raw_operation_id,
+                    "summary": "Cancel booking",
+                    "description": "Cancels a booking by ID.",
+                    "responses": {},
+                }
+            }
+        },
+    }
+    scanner = SurfaceScanner()
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as f:
+        json.dump(openapi_spec, f)
+        tmp_path = f.name
+
+    surface = scanner.scan_openapi(tmp_path, server_name="galaxium")
+    assert len(surface.tools) == 1
+    name = surface.tools[0].name
+    # Double underscores must be collapsed — same final name as the clean operationId
+    assert name == "mcp_galaxium_cancel_booking_endpoint_cancel_booking_id_post"
+    assert "__" not in name, f"Double underscore survived sanitisation: {name!r}"
+    # Also verify the helper directly
+    assert _mcp_tool_name("galaxium", raw_operation_id) == name
+
+
 def test_scan_openapi_truncates_long_operation_id() -> None:
     """scan_openapi truncates names > 64 chars and appends an 8-char SHA-1 suffix."""
     # This operationId yields a raw name of 70 chars — must be truncated to 64.

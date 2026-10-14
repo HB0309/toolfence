@@ -53,7 +53,8 @@ _EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()  # 64 lowercase hex chars
 # ---------------------------------------------------------------------------
 _MAX_MCP_TOOL_NAME = 64
 _HASH_LEN = 8
-_SANITIZE_RE = re.compile(r"[^a-z0-9_]+")
+_SANITIZE_RE = re.compile(r"[^a-z0-9_]+")  # replace non-alphanumeric (step 1)
+_COLLAPSE_RE = re.compile(r"_+")            # collapse underscore runs (step 2)
 
 
 def _mcp_tool_name(server_name: str, operation_id: str) -> str:
@@ -62,12 +63,19 @@ def _mcp_tool_name(server_name: str, operation_id: str) -> str:
     Mirrors nanobot's ``_sanitize_mcp_tool_name`` + ``_limit_tool_name`` rules
     without importing from nanobot (AGENTS.md hard boundary).
 
-    The raw name is ``mcp_{server_name}_{operation_id}`` lowercased with every
-    run of characters outside ``[a-z0-9_]`` collapsed to a single ``_``.  If the
-    result is longer than 64 characters it is truncated to 55 chars and an 8-char
-    SHA-1 suffix is appended (``{raw[:55]}_{sha1[:8]}`` = 64 chars total).
+    Two-step sanitisation (issue #5):
+    1. Replace anything outside ``[a-z0-9_]`` with ``_`` (after lowercasing).
+    2. Collapse every run of ``_`` to a single ``_``.
+
+    FastAPI ``operationId`` values encode path parameters with double underscores
+    (e.g. ``cancel__booking_id__post``); step 2 collapses those so the result
+    matches what nanobot registers.
+
+    If the result is longer than 64 characters it is truncated to 55 chars and
+    an 8-char SHA-1 suffix is appended (``{raw[:55]}_{sha1[:8]}`` = 64 chars).
     """
     raw = _SANITIZE_RE.sub("_", f"mcp_{server_name}_{operation_id}".lower())
+    raw = _COLLAPSE_RE.sub("_", raw)
     if len(raw) <= _MAX_MCP_TOOL_NAME:
         return raw
     digest = hashlib.sha1(raw.encode()).hexdigest()[:_HASH_LEN]
