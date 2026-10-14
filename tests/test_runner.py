@@ -42,7 +42,12 @@ import pytest
 from toolfence.contracts.surface import SurfaceFile
 from toolfence.engine.adapter import ScriptedAdapter
 from toolfence.engine.report import render_report
-from toolfence.engine.runner import DEFAULT_DEFENSES, DefenseConfig, EvaluationRunner
+from toolfence.engine.runner import (
+    DEFAULT_DEFENSES,
+    TOOL_RESULT_TASK_PROMPT,
+    DefenseConfig,
+    EvaluationRunner,
+)
 from toolfence.engine.scoring import DISCLAIMER
 
 # ---------------------------------------------------------------------------
@@ -435,3 +440,108 @@ def test_a5_full_pipeline() -> None:
     # --- Unique trial IDs ---
     ids = [r.trial_id for r in records]
     assert len(ids) == len(set(ids)), "Duplicate trial_ids"
+
+
+# ---------------------------------------------------------------------------
+# adapter_factory — Test 1: factory called once per trial
+# ---------------------------------------------------------------------------
+
+def test_runner_factory_called_once_per_trial() -> None:
+    """Factory is called exactly len(attack_probes) × len(defenses) = 12 times.
+
+    Asserts:
+    - Total call count == 12.
+    - Every call received a non-empty probe_text string.
+    - Exactly 6 calls had channel='user-input', 6 had channel='tool-result'.
+    - Every call's defense is a DefenseConfig instance.
+    """
+    calls: list[tuple[DefenseConfig, str, str]] = []
+
+    def spy_factory(defense: DefenseConfig, channel: str, probe_text: str) -> ScriptedAdapter:
+        calls.append((defense, channel, probe_text))
+        return ScriptedAdapter(_FIX_USER_INPUT)
+
+    attack_probes = [
+        (_load_probe(_PROBE_USER_INPUT),  ScriptedAdapter(_FIX_USER_INPUT)),
+        (_load_probe(_PROBE_TOOL_RESULT), ScriptedAdapter(_FIX_TOOL_RESULT)),
+    ]
+    normal_probes = [
+        (_NORMAL_PROBE_DICT, ScriptedAdapter(_FIX_NORMAL)),
+    ]
+    runner = EvaluationRunner(
+        attack_probes=attack_probes,
+        normal_probes=normal_probes,
+        defenses=DEFAULT_DEFENSES,
+        surface_map=_load_surface(),
+        adapter_factory=spy_factory,
+    )
+    runner.run_attack(run_id="r-factory-call-test")
+
+    assert len(calls) == 12, f"Expected 12 factory calls, got {len(calls)}"
+
+    for defense, channel, probe_text in calls:
+        assert isinstance(defense, DefenseConfig), (
+            f"Expected DefenseConfig, got {type(defense)!r}"
+        )
+        assert probe_text, "probe_text must be a non-empty string"
+
+    ui_count = sum(1 for _, ch, _ in calls if ch == "user-input")
+    tr_count = sum(1 for _, ch, _ in calls if ch == "tool-result")
+    assert ui_count == 6, f"Expected 6 user-input calls, got {ui_count}"
+    assert tr_count == 6, f"Expected 6 tool-result calls, got {tr_count}"
+
+
+# ---------------------------------------------------------------------------
+# adapter_factory — Test 2: tool-result channel receives TOOL_RESULT_TASK_PROMPT
+# ---------------------------------------------------------------------------
+
+def test_runner_factory_tool_result_gets_task_prompt() -> None:
+    """run_turn receives TOOL_RESULT_TASK_PROMPT for tool-result trials only.
+
+    For user-input trials the prompt contains "Reference token:" (canary text),
+    not the task prompt constant.
+    """
+    recorded: list[tuple[str, str]] = []  # (channel, prompt) pairs
+
+    class _RecordingAdapter:
+        def __init__(self, inner: ScriptedAdapter, channel: str) -> None:
+            self._inner = inner
+            self._channel = channel
+
+        def run_turn(self, prompt: str, defense: str) -> object:  # noqa: ARG002
+            recorded.append((self._channel, prompt))
+            return self._inner.run_turn(prompt, defense)
+
+    def recording_factory(defense: DefenseConfig, channel: str, probe_text: str) -> _RecordingAdapter:  # noqa: ARG001
+        return _RecordingAdapter(ScriptedAdapter(_FIX_USER_INPUT), channel)
+
+    attack_probes = [
+        (_load_probe(_PROBE_USER_INPUT),  ScriptedAdapter(_FIX_USER_INPUT)),
+        (_load_probe(_PROBE_TOOL_RESULT), ScriptedAdapter(_FIX_TOOL_RESULT)),
+    ]
+    normal_probes = [
+        (_NORMAL_PROBE_DICT, ScriptedAdapter(_FIX_NORMAL)),
+    ]
+    runner = EvaluationRunner(
+        attack_probes=attack_probes,
+        normal_probes=normal_probes,
+        defenses=DEFAULT_DEFENSES,
+        surface_map=_load_surface(),
+        adapter_factory=recording_factory,
+    )
+    runner.run_attack(run_id="r-factory-prompt-test")
+
+    assert recorded, "No run_turn calls were recorded"
+
+    for channel, prompt in recorded:
+        if channel == "tool-result":
+            assert prompt == TOOL_RESULT_TASK_PROMPT, (
+                f"tool-result trial got unexpected prompt: {prompt!r}"
+            )
+        else:
+            assert prompt != TOOL_RESULT_TASK_PROMPT, (
+                f"user-input trial unexpectedly got TOOL_RESULT_TASK_PROMPT"
+            )
+            assert "Reference token:" in prompt, (
+                f"user-input trial prompt missing canary text: {prompt!r}"
+            )
