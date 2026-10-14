@@ -519,7 +519,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### A-2 Canary and probe builder — engine
-**Track:** A · **Depends on:** S-2 · **Status:** [ ] pending
+**Track:** A · **Depends on:** S-2 · **Status:** [x] done
 
 **Intent:** Canary generation, probe builder, and placeholder-template validator.
 
@@ -538,7 +538,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### A-3 Datamarking — guard
-**Track:** C · **Depends on:** S-2 · **Status:** [ ] pending
+**Track:** C · **Depends on:** S-2 · **Status:** [x] done
 
 **Intent:** Implement `datamark_result` in `guard/datamark.py` — the single place all datamarking goes through. `GuardedProxy` calls it when `datamark_on=True`; there is no separate engine-side copy.
 
@@ -555,7 +555,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### A-4 Verdict assignment and scoring — engine
-**Track:** A · **Depends on:** S-2, S-4 · **Status:** [ ] pending
+**Track:** A · **Depends on:** S-2, S-4 · **Status:** [x] done
 
 **Intent:** Deterministic verdict assignment; metric aggregation; report renderer with disclaimer.
 
@@ -574,7 +574,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### A-5 Evaluation runner — engine
-**Track:** A · **Depends on:** S-4, A-2, A-4 · **Status:** [ ] pending
+**Track:** A · **Depends on:** S-4, A-2, A-4 · **Status:** [x] done
 
 **Intent:** The evaluation runner that drives the full channel × defense matrix.
 
@@ -592,7 +592,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### C-1 Guard core — decision, provenance, taint
-**Track:** C · **Depends on:** S-2 · **Status:** [ ] pending
+**Track:** C · **Depends on:** S-2 · **Status:** [x] done
 
 **Intent:** The three stateless/stateful Guard logic pieces. Zero nanobot imports.
 
@@ -611,7 +611,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### C-2 GuardedProxy and HeldCallEvent — Guard
-**Track:** C · **Depends on:** C-1, A-3 · **Status:** [ ] pending
+**Track:** C · **Depends on:** C-1, A-3 · **Status:** [x] done
 
 **Intent:** `GuardedProxy` wraps **any** tool (not just `mcp_*`), with two boolean switches: `guard_on` enables the card rule and holds; `datamark_on` enables datamarking of untrusted results. This single proxy covers all six defense conditions and is used by the runner even when Guard is off.
 
@@ -629,7 +629,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### C-3 Guard confirm flow — Guard
-**Track:** C · **Depends on:** C-2 · **Status:** [ ] pending
+**Track:** C · **Depends on:** C-2 · **Status:** [x] done
 
 **Intent:** Confirm-grant mechanism: a user-sourced "Allow" press unlocks the exact held call for that turn only. A grant from a tool result is rejected.
 
@@ -754,7 +754,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-5 Baseline `surface.json` and narrowing config — targets
-**Track:** B · **Depends on:** A-1, B-1a, B-1b, B-2 · **Status:** [ ] pending
+**Track:** B · **Depends on:** A-1, B-1a, B-1b, B-2 · **Status:** [x] done
 
 **Intent:** Produce the committed baseline `surface.json` (all Galaxium tools including the internal route), verify tool names against the live MCP list, and confirm `enabled_tools` in `nanobot.eval.json` narrows correctly.
 
@@ -771,7 +771,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### C-4 CLI — scan, run, report
-**Track:** C · **Depends on:** A-1, A-4, A-5 · **Status:** [ ] pending
+**Track:** C · **Depends on:** A-1, A-4, A-5 · **Status:** [x] done
 
 **Intent:** Implement the three `toolfence` subcommands with correct exit codes and output format. No secrets in committed tree.
 
@@ -789,7 +789,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### C-5 CI checks — surface-diff and Guard-wiring
-**Track:** C · **Depends on:** A-1, B-3 · **Status:** [ ] pending
+**Track:** C · **Depends on:** A-1, B-3 · **Status:** [x] done
 
 **Intent:** Three CI checks as callable Python functions plus the GitHub Action. The Action also runs the full pytest suite with no model/network.
 
@@ -807,7 +807,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### C-6 Dashboard
-**Track:** C · **Depends on:** A-4, A-5 · **Status:** [ ] pending
+**Track:** C · **Depends on:** A-4, A-5 · **Status:** [x] done
 
 **Intent:** Read-only results dashboard: grid, trend, replay button. Playwright used for the E2E test (optional dev dep; test skips gracefully if Playwright is not installed).
 
@@ -860,7 +860,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### A-6 Findings report — engine
-**Track:** A · **Depends on:** A-4, C-2 · **Status:** [ ] pending
+**Track:** A · **Depends on:** A-4, C-2 · **Status:** [x] done
 
 **Intent:** Machine-readable findings fixture (all 13 findings from PG-9) and the PG-8 scripted-adapter integration test.
 
@@ -878,7 +878,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### C-7 IBM Cloud deploy
-**Track:** C · **Depends on:** C-6 · **Status:** [ ] pending
+**Track:** C · **Depends on:** C-6 · **Status:** [x] done
 
 **Intent:** Documented, repeatable IBM Cloud Code Engine deploy. No API keys on the server.
 

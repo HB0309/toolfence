@@ -52,7 +52,7 @@ from toolfence.guard.taint import SessionTaint
 from toolfence.integration.installer import install_guard, verify_guard_invariant
 
 _DEFAULT_CONFIG = "config/nanobot.eval.json"
-_DEFAULT_SURFACE = "fixtures/surface_fixture.json"
+_DEFAULT_SURFACE = "results/surface.json"
 
 
 def _load_surface(surface_path: str) -> SurfaceFile:
