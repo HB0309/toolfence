@@ -24,6 +24,9 @@
     "ssrfWhitelist": ["127.0.0.0/8", "::1/128"],
     "exec": { "enable": false },
     "web": { "enable": false },
+    "file": { "enable": false },
+    "cliApps": { "enable": false },
+    "my": { "enable": false },
     "mcpServers": {
       "galaxium": {
         "type": "streamableHttp",

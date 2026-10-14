@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "mcp_galaxium_health_check_get",
+      "route": "GET /",
+      "action_class": "read",
+      "trust_label": "first-party",
+      "description_sha256": "017deb890ebc0c0d6ac2ffb292e97d26af7ed090b57fb770aeaac07fa8161e8e"
+    },
+    {
+      "name": "mcp_galaxium_get_flights_flights_get",
+      "route": "GET /flights",
+      "action_class": "read",
+      "trust_label": "first-party",
+      "description_sha256": "fcf9639b84369f79a0f70a35d3b0b2dadce282613636c123c40e4a6f740d17c5"
+    },
+    {
+      "name": "mcp_galaxium_book_flight_endpoint_book_post",
+      "route": "POST /book",
+      "action_class": "irreversible",
+      "trust_label": "first-party",
+      "description_sha256": "63fa47615110908e5b1b5f3ae06eee323910f3919f0668042bfa2436ece02680"
+    },
+    {
+      "name": "mcp_galaxium_get_user_bookings_bookings_user_id_get",
+      "route": "GET /bookings/{user_id}",
+      "action_class": "read",
+      "trust_label": "first-party",
+      "description_sha256": "99edb362d81819baf3adcecc774f3cdbc2516cbd5d6f309523720185423b743c"
+    },
+    {
+      "name": "mcp_galaxium_cancel_booking_endpoint_cancel_booking_id_post",
+      "route": "POST /cancel/{booking_id}",
+      "action_class": "irreversible",
+      "trust_label": "first-party",
+      "description_sha256": "a6bd32d14f2dea84912d657aea40394a202a13dcd844377bd40c82f556d77208"
+    },
+    {
+      "name": "mcp_galaxium_register_user_endpoint_register_post",
+      "route": "POST /register",
+      "action_class": "state-changing",
+      "trust_label": "first-party",
+      "description_sha256": "c9e0829438a7c56f8a39555dc986bc47ba4f9f4d929211a770b3531650a02ffd"
+    },
+    {
+      "name": "mcp_galaxium_get_user_endpoint_user_get",
+      "route": "GET /user",
+      "action_class": "read",
+      "trust_label": "first-party",
+      "description_sha256": "623143a99574bcbc6e7308d5558227f29aaffef87c326e37b25d1dd91b86b4b3"
+    },
+    {
+      "name": "mcp_galaxium_get_flight_reviews_flights_flight_id_reviews_get",
+      "route": "GET /flights/{flight_id}/reviews",
+      "action_class": "read",
+      "trust_label": "untrusted",
+      "description_sha256": "b99a70966cf1c8d814dcea52829b1a74738e92922930bbe2506f434b777e1c51"
+    },
+    {
+      "name": "mcp_galaxium_create_booking_from_hold_internal_bookings_d31ac16e",
+      "route": "POST /internal/bookings/from-hold",
+      "action_class": "irreversible",
+      "trust_label": "first-party",
+      "description_sha256": "89e0d8468bdc3d43039e9a24fb1400a723b88b0e9a878aeb9dbe3be5cd88456a"
+    },
+    {
+      "name": "mcp_galaxium_create_quote_quotes_post",
+      "route": "POST /quotes",
+      "action_class": "state-changing",
+      "trust_label": "first-party",
+      "description_sha256": "44b957298d0e56334a8d2d1f5e99421778919b4f8ebe1248a4600e662a31f496"
+    },
+    {
+      "name": "mcp_galaxium_get_quote_quotes_quote_id_get",
+      "route": "GET /quotes/{quote_id}",
+      "action_class": "read",
+      "trust_label": "first-party",
+      "description_sha256": "396e75273d0be3a4a6e39e0b16bc51acddfc5516de21cfff4f4be9415b2b9d75"
+    },
+    {
+      "name": "mcp_galaxium_create_hold_quotes_quote_id_holds_post",
+      "route": "POST /quotes/{quote_id}/holds",
+      "action_class": "state-changing",
+      "trust_label": "first-party",
+      "description_sha256": "95bf6e7fcf4aae16ec8754650fbcd4fd11e6a2b0bcd2a5a3ecd5452d9d001a25"
+    },
+    {
+      "name": "mcp_galaxium_get_hold_holds_hold_id_get",
+      "route": "GET /holds/{hold_id}",
+      "action_class": "read",
+      "trust_label": "first-party",
+      "description_sha256": "e9bd5cadd6c952350ea03c87cdaba413b772f71ec6eed9f2ab8d381afade2ebf"
+    },
+    {
+      "name": "mcp_galaxium_confirm_hold_holds_hold_id_confirm_post",
+      "route": "POST /holds/{hold_id}/confirm",
+      "action_class": "irreversible",
+      "trust_label": "first-party",
+      "description_sha256": "0e4b3ad302c0dafe90e837680c55f6aa199218fde92f6c34a471d585b4db9af4"
+    },
+    {
+      "name": "mcp_galaxium_release_hold_holds_hold_id_release_post",
+      "route": "POST /holds/{hold_id}/release",
+      "action_class": "state-changing",
+      "trust_label": "first-party",
+      "description_sha256": "73b82822255fea52aa32d4d0fb7c0930bd98c9f0546429c426f7e5ec07917703"
+    },
+    {
+      "name": "message",
+      "route": "builtin",
+      "action_class": "state-changing",
+      "trust_label": "first-party",
+      "description_sha256": "a545878c68fb3545680c5c2498ba02b532042209d572aedce40ccfeb1fb7dfd6"
+    },
+    {
+      "name": "create_goal",
+      "route": "builtin",
+      "action_class": "state-changing",
+      "trust_label": "first-party",
+      "description_sha256": "ec24d288d3790f0141f452bc47280abd521347ced35a88fb2b38ac0741ee764c"
+    },
+    {
+      "name": "update_goal",
+      "route": "builtin",
+      "action_class": "state-changing",
+      "trust_label": "first-party",
+      "description_sha256": "33be2fd86faa28052df88f2c46339d4ea50ebad9116125b81a9a59614e180783"
+    },
+    {
+      "name": "list_sessions",
+      "route": "builtin",
+      "action_class": "read",
+      "trust_label": "first-party",
+      "description_sha256": "8bc1696b5b1819a83e6b6696be3be8efdf0510ec5492474996aa2dbde0ab7352"
+    },
+    {
+      "name": "read_session",
+      "route": "builtin",
+      "action_class": "read",
+      "trust_label": "untrusted",
+      "description_sha256": "f9fdb605abc00c96e1ef1d8163a9cd8b72b52342eba626c1191e512d84326d2c"
+    },
+    {
+      "name": "search_sessions",
+      "route": "builtin",
+      "action_class": "read",
+      "trust_label": "untrusted",
+      "description_sha256": "211180b6d0da4ead495b481a228538fc5ef9f6e715cd8766b511f2ba293d7ed8"
+    },
+    {
+      "name": "send_session_message",
+      "route": "builtin",
+      "action_class": "state-changing",
+      "trust_label": "first-party",
+      "description_sha256": "e51c4628c037b8d69e76087b6bb4421c0fa7f61073e912e3eb0d604087aab18a"
+    }
+  ]
+}
