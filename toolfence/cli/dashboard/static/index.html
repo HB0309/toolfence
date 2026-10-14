@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ToolFence Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      background: #ffffff;
+      color: #1f2328;
+      padding: 24px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 4px; }
+    h2 { font-size: 1.1rem; font-weight: 600; margin: 24px 0 8px; color: #1f2328; }
+    h3 { font-size: 0.95rem; font-weight: 600; margin: 16px 0 6px; color: #57606a; }
+    .subtitle { color: #57606a; font-size: 0.875rem; margin-bottom: 20px; }
+    .disclaimer {
+      border: 1px solid #e5e7eb;
+      border-left: 4px solid #3b82d4;
+      background: #f7f8fa;
+      padding: 10px 14px;
+      border-radius: 4px;
+      color: #57606a;
+      font-size: 0.85rem;
+      margin-bottom: 24px;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      margin-bottom: 16px;
+    }
+    th {
+      background: #f7f8fa;
+      border: 1px solid #e5e7eb;
+      padding: 6px 10px;
+      text-align: left;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    th.num, td.num { text-align: right; }
+    td {
+      border: 1px solid #e5e7eb;
+      padding: 5px 10px;
+      white-space: nowrap;
+    }
+    tr:nth-child(even) td { background: #f7f8fa; }
+    .badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-on  { background: #d1fae5; color: #065f46; }
+    .badge-off { background: #f3f4f6; color: #57606a; }
+    .badge-leaked     { background: #fee2e2; color: #991b1b; }
+    .badge-held       { background: #fef9c3; color: #854d0e; }
+    .badge-refused    { background: #d1fae5; color: #065f46; }
+    .badge-inconclusive { background: #e0e7ff; color: #3730a3; }
+
+    /* Replay */
+    .replay-section {
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 16px;
+      margin-top: 24px;
+      background: #f7f8fa;
+    }
+    #replay-btn {
+      background: #3b82d4;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 7px 18px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #replay-btn:hover { background: #2563eb; }
+    #replay-btn:disabled { background: #9ca3af; cursor: default; }
+    #replay-progress {
+      margin-top: 12px;
+      font-size: 0.8rem;
+      color: #57606a;
+    }
+    #replay-counter {
+      margin-top: 6px;
+      font-weight: 600;
+      font-size: 0.85rem;
+    }
+    .replay-card {
+      margin-top: 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      background: #ffffff;
+      padding: 10px 14px;
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
+    .replay-card .label { color: #57606a; font-size: 0.75rem; }
+    .replay-card .value { font-weight: 600; }
+
+    /* Trend */
+    .trend-table td.run-id { font-family: monospace; font-size: 0.8rem; }
+
+    /* Loading state */
+    .loading { color: #57606a; font-style: italic; }
+    .error   { color: #991b1b; font-style: italic; }
+  </style>
+</head>
+<body>
+
+<h1>ToolFence Dashboard</h1>
+<p class="subtitle">Read-only evaluation results. No live model calls are made.</p>
+
+<div class="disclaimer">
+  ⓘ A clean result means the evaluation did not find a way through, not that none exists.
+</div>
+
+<!-- ================================================================ -->
+<!-- Security results grid                                             -->
+<!-- ================================================================ -->
+<h2>Security Results</h2>
+<p style="font-size:0.8rem;color:#57606a;margin-bottom:6px">
+  Verdict counts per channel × defense × guard condition.
+  <strong>Inconclusive</strong> verdicts are always in their own column — never folded into pass/fail.
+</p>
+<p id="security-loading" class="loading">Loading…</p>
+<div id="security-grid"></div>
+
+<!-- ================================================================ -->
+<!-- Normal-task results                                               -->
+<!-- ================================================================ -->
+<h2>Normal-Task Results</h2>
+<p id="normal-loading" class="loading">Loading…</p>
+<div id="normal-grid"></div>
+
+<!-- ================================================================ -->
+<!-- Trend (run-over-run summary)                                      -->
+<!-- ================================================================ -->
+<h2>Trend</h2>
+<p id="trend-note" class="loading">Loading…</p>
+<div id="trend-grid"></div>
+
+<!-- ================================================================ -->
+<!-- Replay                                                            -->
+<!-- ================================================================ -->
+<div class="replay-section">
+  <h2 style="margin-top:0">Replay Stored Trials</h2>
+  <p style="font-size:0.85rem;color:#57606a;margin-bottom:10px;">
+    Steps through stored trial records one by one. No live execution.
+  </p>
+  <button id="replay-btn">▶ Start Replay</button>
+  <div id="replay-counter"></div>
+  <div id="replay-progress"></div>
+</div>
+
+<script src="/static/replay.js"></script>
+</body>
+</html>
