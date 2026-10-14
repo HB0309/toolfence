@@ -37,6 +37,7 @@ import pytest
 from toolfence.contracts.surface import SurfaceFile
 from toolfence.engine.surface import (
     SurfaceScanner,
+    _mcp_tool_name,
     check_description_drift,
     description_sha256,
     get_action_class,
@@ -120,7 +121,7 @@ def test_known_tool_action_class_returned() -> None:
         json.loads(SURFACE_FIXTURE.read_text(encoding="utf-8"))
     )
     assert get_action_class(surface, "mcp_galaxium_get_flights_flights_get") == "read"
-    assert get_action_class(surface, "mcp_galaxium_cancel_booking__booking_id__post") == "irreversible"
+    assert get_action_class(surface, "mcp_galaxium_cancel_booking_endpoint_cancel_booking_id_post") == "irreversible"
     assert get_action_class(surface, "mcp_galaxium_create_hold_quotes_quote_id_holds_post") == "state-changing"
 
 
@@ -311,7 +312,7 @@ def test_scan_mcp_with_mock_server() -> None:
     mock_response_body = json.dumps({
         "tools": [
             {"name": "mcp_galaxium_get_flights_flights_get", "description": "List flights."},
-            {"name": "mcp_galaxium_cancel_booking__booking_id__post", "description": "Cancel booking."},
+            {"name": "mcp_galaxium_cancel_booking_endpoint_cancel_booking_id_post", "description": "Cancel booking."},
         ]
     }).encode("utf-8")
 
@@ -416,3 +417,113 @@ def test_scan_json_accepts_real_spike_name() -> None:
     assert len(surface.tools) == 1
     assert surface.tools[0].name == real_name
     assert surface.tools[0].action_class == "state-changing"  # POST, no keyword
+
+
+# ===========================================================================
+# ENG-1: scan_openapi uses operationId when present (Sub-Task 4)
+# ===========================================================================
+
+def test_scan_openapi_uses_operation_id() -> None:
+    """scan_openapi uses operationId + server_name to derive the tool name."""
+    operation_id = "cancel_booking_endpoint_cancel_booking_id_post"
+    openapi_spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Test", "version": "1.0"},
+        "paths": {
+            "/cancel/{booking_id}": {
+                "post": {
+                    "operationId": operation_id,
+                    "summary": "Cancel booking",
+                    "description": "Cancels a booking by ID.",
+                    "responses": {},
+                }
+            }
+        },
+    }
+    scanner = SurfaceScanner()
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as f:
+        json.dump(openapi_spec, f)
+        tmp_path = f.name
+
+    surface = scanner.scan_openapi(tmp_path, server_name="galaxium")
+    assert len(surface.tools) == 1
+    expected_name = _mcp_tool_name("galaxium", operation_id)
+    assert surface.tools[0].name == expected_name
+    assert expected_name == "mcp_galaxium_cancel_booking_endpoint_cancel_booking_id_post"
+    assert surface.tools[0].action_class == "irreversible"  # name contains "cancel"
+
+
+def test_scan_openapi_operation_id_with_double_underscores() -> None:
+    """Double underscores in a raw FastAPI operationId are collapsed to one underscore.
+
+    FastAPI encodes path parameters with __ (e.g. {booking_id} becomes
+    __booking_id__).  The two-step sanitiser must collapse those so the
+    resulting tool name matches what nanobot registers.
+    """
+    # Raw FastAPI operationId — note __booking_id__ around the path param
+    raw_operation_id = "cancel_booking_endpoint_cancel__booking_id__post"
+    openapi_spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Test", "version": "1.0"},
+        "paths": {
+            "/cancel/{booking_id}": {
+                "post": {
+                    "operationId": raw_operation_id,
+                    "summary": "Cancel booking",
+                    "description": "Cancels a booking by ID.",
+                    "responses": {},
+                }
+            }
+        },
+    }
+    scanner = SurfaceScanner()
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as f:
+        json.dump(openapi_spec, f)
+        tmp_path = f.name
+
+    surface = scanner.scan_openapi(tmp_path, server_name="galaxium")
+    assert len(surface.tools) == 1
+    name = surface.tools[0].name
+    # Double underscores must be collapsed — same final name as the clean operationId
+    assert name == "mcp_galaxium_cancel_booking_endpoint_cancel_booking_id_post"
+    assert "__" not in name, f"Double underscore survived sanitisation: {name!r}"
+    # Also verify the helper directly
+    assert _mcp_tool_name("galaxium", raw_operation_id) == name
+
+
+def test_scan_openapi_truncates_long_operation_id() -> None:
+    """scan_openapi truncates names > 64 chars and appends an 8-char SHA-1 suffix."""
+    # This operationId yields a raw name of 70 chars — must be truncated to 64.
+    operation_id = "create_booking_from_hold_internal_bookings_from_hold_post"
+    openapi_spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Test", "version": "1.0"},
+        "paths": {
+            "/internal/bookings/from-hold": {
+                "post": {
+                    "operationId": operation_id,
+                    "summary": "Create booking from hold",
+                    "description": "Books a flight from an existing hold.",
+                    "responses": {},
+                }
+            }
+        },
+    }
+    scanner = SurfaceScanner()
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as f:
+        json.dump(openapi_spec, f)
+        tmp_path = f.name
+
+    surface = scanner.scan_openapi(tmp_path, server_name="galaxium")
+    assert len(surface.tools) == 1
+    name = surface.tools[0].name
+    assert len(name) <= 64, f"Tool name too long ({len(name)} chars): {name}"
+    # Last 9 chars are "_" + 8-char hex digest
+    assert len(name.split("_")[-1]) == 8, f"Expected 8-char hex suffix, got: {name}"
+    assert name == "mcp_galaxium_create_booking_from_hold_internal_bookings_d31ac16e"

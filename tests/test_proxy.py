@@ -60,10 +60,10 @@ def _load_surface() -> SurfaceFile:
 
 
 # Tool names from fixture
-_IRREVERSIBLE_TOOL = "mcp_galaxium_cancel_booking__booking_id__post"           # irreversible, first-party
-_STATE_CHANGING_TOOL = "mcp_galaxium_create_hold_quotes__quote_id__holds_post" # state-changing, first-party
-_READ_TOOL = "mcp_galaxium_get_flights_flights_get"                             # read, first-party
-_UNTRUSTED_READ_TOOL = "mcp_galaxium_get_flight_reviews_flights__flight_id__reviews_get"  # read, untrusted
+_IRREVERSIBLE_TOOL = "mcp_galaxium_cancel_booking_endpoint_cancel_booking_id_post"        # irreversible, first-party
+_STATE_CHANGING_TOOL = "mcp_galaxium_create_hold_quotes_quote_id_holds_post"              # state-changing, first-party
+_READ_TOOL = "mcp_galaxium_get_flights_flights_get"                                       # read, first-party
+_UNTRUSTED_READ_TOOL = "mcp_galaxium_get_flight_reviews_flights_flight_id_reviews_get"   # read, untrusted
 
 
 def _make_tool(name: str, result: str = "ok") -> Any:
