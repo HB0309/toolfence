@@ -76,7 +76,7 @@ def patched_tmp(tmp_path):
     assert patches, f"No patches found in {PATCHES_DIR}"
     for patch in patches:
         r = subprocess.run(
-            ["git", "apply", "--unsafe-paths", "--directory", str(tmp_path), str(patch)],
+            ["git", "apply", "--ignore-whitespace", "--unsafe-paths", "--directory", str(tmp_path), str(patch)],
             cwd=str(GALAXIUM_DIR),
             capture_output=True,
             text=True,
