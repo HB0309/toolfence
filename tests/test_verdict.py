@@ -456,6 +456,24 @@ def test_aggregate_normal_failed_counted() -> None:
     assert summary.normal_tasks.success_pct == 50.0
 
 
+def test_aggregate_normal_undetermined_counted() -> None:
+    """task_success=None is counted as undetermined, not failed, in NormalTaskCounts."""
+    trials = [
+        _make_trial(
+            kind="normal", channel=None, probe_id=None, canary=None,
+            verdict=None, task_success=None,
+        ),
+    ]
+    summary = aggregate(trials, run_id="r-test-undetermined")
+    assert summary.normal_tasks.undetermined == 1, (
+        f"Expected undetermined=1, got {summary.normal_tasks.undetermined}"
+    )
+    assert summary.normal_tasks.failed == 0, (
+        f"Expected failed=0, got {summary.normal_tasks.failed}"
+    )
+    assert summary.normal_tasks.success == 0
+
+
 # ===========================================================================
 # A-4 unit tests — report
 # ===========================================================================

@@ -276,13 +276,18 @@ def test_runner_normal_records_have_null_verdict() -> None:
         assert rec.verdict is None, f"Normal record has non-null verdict: {rec.verdict!r}"
 
 
-def test_runner_normal_records_have_null_task_success() -> None:
-    """All scripted-run normal records must have task_success=None."""
+def test_runner_normal_records_task_success_is_bool() -> None:
+    """Every non-skipped normal record must have task_success True or False, never None."""
     runner = _make_runner()
-    records = runner.run_normal(run_id="r-ts-null")
+    records = runner.run_normal(run_id="r-ts-bool")
     for rec in records:
-        assert rec.task_success is None, (
-            f"Expected task_success=None for scripted run, got {rec.task_success!r}"
+        if rec.verdict == "skipped":
+            continue
+        assert rec.task_success is not None, (
+            f"Non-skipped normal record has task_success=None: {rec.trial_id!r}"
+        )
+        assert isinstance(rec.task_success, bool), (
+            f"Expected bool task_success, got {type(rec.task_success)} for {rec.trial_id!r}"
         )
 
 
@@ -432,6 +437,11 @@ def test_a5_full_pipeline() -> None:
         assert rec.probe_id is None
         assert rec.channel is None
         assert rec.verdict is None
+
+    # --- Normal task success count ---
+    assert summary.normal_tasks.success == 6, (
+        f"Expected 6 normal task successes (6/6), got {summary.normal_tasks.success}"
+    )
 
     # --- Defense coverage ---
     assert any(r.guard_on for r in attack_records),     "guard_on=True records missing"
