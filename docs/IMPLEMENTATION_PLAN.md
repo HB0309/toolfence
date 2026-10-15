@@ -895,21 +895,30 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### P-1 Full evaluation run and results commit
-**Track:** A (primary) + B + C (review) · **Depends on:** all S/A/B/C tasks · **Status:** [ ] pending
+**Track:** A (primary) + B + C (review) · **Depends on:** all S/A/B/C tasks · **Status:** [x] done
 
-**Intent:** Run the full three-condition evaluation live against the model, commit results, verify PG-8 live gate.
+**Intent:** Run the live evaluation matrix against the real model in two configurations, commit results, verify PG-8 live gate.
 
 **Req IDs:** PG-1, PG-8, PG-11
 
+**Design:** Two result folders, each produced by `toolfence run --live`, differing only in `--config`.  `--surface results/surface.json` is fixed in both runs; it feeds Guard only.  Each folder contains 18 trial records (Guard-off and Guard-on rows co-located).  The runs are:
+- `results/full/` — `config/nanobot.eval.full.json` (`enabledTools: ["*"]`, all Galaxium tools)
+- `results/narrowed/` — `config/nanobot.eval.json` (9-tool PG-6 traveller set)
+
+`booking.db` is backed up and restored around every trial via `sqlite3.backup()` in `toolfence/integration/live_factory.py`.
+
 **Files:**
-- `results/baseline/` — trial records from the baseline run
-- `results/narrowed/` — trial records from the narrowed-surface run
-- `results/guard-on/` — trial records from the Guard-enabled run
-- `docs/notes/guard-gate-results.md` — 10-run normal-task gate with Guard on (≥ 8/10)
+- `results/full/` — 18 trial records, full-tool config
+- `results/narrowed/` — 18 trial records, narrowed config
+- `docs/notes/full-report.md` — rendered report for full run
+- `docs/notes/narrowed-report.md` — rendered report for narrowed run
+- `docs/notes/guard-gate-results.md` — PG-8 gate: 10 normal tasks with Guard on (≥ 8/10)
+- `config/nanobot.eval.full.json` — new nanobot config with `enabledTools: ["*"]`
+- `toolfence/integration/live_factory.py` — health check, DB backup/restore, live adapter factory
 
 **Test:** Dashboard E2E test loads committed results and renders grid + trend (CLI-6, PG-11); `guard-gate-results.md` contains a pass count ≥ 8.
 
-**Done when:** All three result sets committed; dashboard renders without error; Guard-on normal-task gate ≥ 8/10 documented.
+**Done when:** Both result sets committed; dashboard renders without error; Guard-on normal-task gate ≥ 8/10 documented.
 
 ---
 
