@@ -18,16 +18,18 @@ What this script does
    using the same constructors as ``gateway_runtime._run_gateway``.
 2. Creates a temporary workspace (``tempfile.mkdtemp()``) for the session, the
    same way ``nanobot_adapter._async_run_turn`` does.
-3. Builds Guard components and a mutable pending-event cell.
+3. Builds a ``DecisionGate`` that owns all hold-decision state.
 4. Applies the loopback transport fix (via
    ``nanobot_adapter._mcp_urls_are_all_loopback``) before ``mcp_provider.connect()``
    and restores the original factory after ``mcp_provider.aclose()``.
-5. Wraps ``bus.publish_inbound`` to call
-   ``provenance.record_user_message(msg.content)`` for every typed message
-   (non-callback).  Button taps carry ``metadata["is_callback"] = True`` and
-   are skipped.
+5. Wraps ``bus.publish_inbound`` to:
+   - Drop all Telegram ``is_callback`` inbound messages silently.
+   - Pass Telegram text messages through ``gate.handle_inbound`` before
+     recording provenance; consumed messages never reach the agent.
+   - Record provenance and publish all other messages normally.
 6. Builds ``ChannelManager``; gets the ``TelegramChannel``; wraps its
-   ``_on_callback_query`` with ``wrap_callback_query`` before channels start.
+   ``_on_callback_query`` with ``wrap_callback_query`` (passing
+   ``resolve_decision=gate.resolve``) before channels start.
 7. Runs a minimal async loop: connect MCP → install Guard → start agent and
    channels concurrently → wait for shutdown.
 
@@ -48,6 +50,7 @@ This script lives in ``scripts/`` and may import from anywhere including nanobot
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import os
 import shutil
@@ -101,7 +104,11 @@ from toolfence.guard.confirm import ConfirmGrant
 from toolfence.guard.decision import GuardDecision
 from toolfence.guard.provenance import ProvenanceStore
 from toolfence.guard.taint import SessionTaint
-from toolfence.integration.channel_adapter import send_hold_card, wrap_callback_query
+from toolfence.integration.channel_adapter import (
+    DecisionGate,
+    send_hold_card,
+    wrap_callback_query,
+)
 from toolfence.integration.installer import install_guard
 from toolfence.integration.nanobot_adapter import _mcp_urls_are_all_loopback
 
@@ -139,29 +146,6 @@ taint = SessionTaint()
 decision = GuardDecision()
 confirm_grant = ConfirmGrant()
 
-# Pending-event cell shared between on_held and wrap_callback_query.
-# _pending[0] holds the current HeldCallEvent (None when idle).
-# _pending_hashes tracks hashes for which a card has already been sent so
-# on_held can skip duplicates without sending a second card.
-_pending: list[HeldCallEvent | None] = [None]
-_pending_hashes: set[str] = set()
-
-# ---------------------------------------------------------------------------
-# Wrap bus.publish_inbound for provenance recording
-# ---------------------------------------------------------------------------
-
-_orig_publish_inbound = bus.publish_inbound
-
-
-async def _provenance_publish_inbound(msg: InboundMessage) -> None:
-    """Record typed user messages in ProvenanceStore; skip button-tap callbacks."""
-    if not msg.metadata.get("is_callback"):
-        provenance.record_user_message(msg.content)
-    await _orig_publish_inbound(msg)
-
-
-bus.publish_inbound = _provenance_publish_inbound  # type: ignore[method-assign]
-
 # ---------------------------------------------------------------------------
 # Channel manager — build before event loop starts
 # ---------------------------------------------------------------------------
@@ -173,7 +157,7 @@ channels = ChannelManager(
 )
 
 # ---------------------------------------------------------------------------
-# Telegram channel — wrap _on_callback_query before channels start
+# Telegram channel — resolve before building DecisionGate
 # ---------------------------------------------------------------------------
 
 telegram_ch = channels.get_channel("telegram")
@@ -185,50 +169,96 @@ if telegram_ch is None:
         file=sys.stderr,
     )
 
-    def on_held(event: HeldCallEvent) -> None:  # no-op if no Telegram channel
-        _pending[0] = event
-        _log.info(
-            "held tool=%s reason=%s untrusted_arg=%s hash8=%s card=skipped(no-telegram)",
-            event.tool_name,
-            event.reason,
-            event.untrusted_arg_name,
-            event.arguments_hash[:8],
-        )
+# ---------------------------------------------------------------------------
+# DecisionGate — owns all decision state
+# ---------------------------------------------------------------------------
 
+# When there is no Telegram channel, send_card and send_message are no-ops so
+# await_decision times out and declines correctly.
+if telegram_ch is not None:
+    async def _send_card_to_telegram(event: HeldCallEvent) -> None:
+        await send_hold_card(event, telegram_ch.send, _CHAT_ID, "telegram")
+
+    async def _send_message_to_telegram(msg: Any) -> None:
+        await telegram_ch.send(msg)
+
+    gate = DecisionGate(
+        confirm_grant=confirm_grant,
+        send_card=_send_card_to_telegram,
+        channel=telegram_ch,
+        send_message=_send_message_to_telegram,
+        chat_id=_CHAT_ID,
+        channel_name="telegram",
+    )
 else:
-    def on_held(event: HeldCallEvent) -> None:  # type: ignore[misc]
-        """Store the held event; send a confirm card only if the hash is new."""
-        hash8 = event.arguments_hash[:8]
-        if event.arguments_hash in _pending_hashes:
-            _log.info(
-                "held tool=%s reason=%s untrusted_arg=%s hash8=%s card=skipped(duplicate)",
-                event.tool_name,
-                event.reason,
-                event.untrusted_arg_name,
-                hash8,
-            )
-            return
-        _pending[0] = event
-        _pending_hashes.add(event.arguments_hash)
-        _log.info(
-            "held tool=%s reason=%s untrusted_arg=%s hash8=%s card=sent",
-            event.tool_name,
-            event.reason,
-            event.untrusted_arg_name,
-            hash8,
-        )
-        asyncio.get_running_loop().create_task(
-            send_hold_card(event, telegram_ch.send, _CHAT_ID, "telegram"),
-            name="toolfence-hold-card",
-        )
+    async def _noop_send_card(event: HeldCallEvent) -> None:  # type: ignore[misc]
+        pass
 
-    def _clear_pending() -> None:
-        """Clear the pending cell and remove its hash from the tracking set."""
-        ev = _pending[0]
-        if ev is not None:
-            _pending_hashes.discard(ev.arguments_hash)
-        _pending[0] = None
+    async def _noop_send_message(msg: Any) -> None:  # type: ignore[misc]
+        pass
 
+    class _NeverAllowed:
+        def is_allowed(self, sender_id: str) -> bool:
+            return False
+
+    gate = DecisionGate(  # type: ignore[assignment]
+        confirm_grant=confirm_grant,
+        send_card=_noop_send_card,
+        channel=_NeverAllowed(),
+        send_message=_noop_send_message,
+        chat_id=_CHAT_ID,
+        channel_name="telegram",
+    )
+
+
+def on_held(event: HeldCallEvent) -> None:
+    """Delegate to gate; log the hold."""
+    hash8 = event.arguments_hash[:8]
+    _log.info(
+        "held tool=%s reason=%s untrusted_arg=%s hash8=%s",
+        event.tool_name,
+        event.reason,
+        event.untrusted_arg_name,
+        hash8,
+    )
+    gate.on_held(event)
+
+
+# ---------------------------------------------------------------------------
+# Wrap bus.publish_inbound for provenance recording and decision interception
+# ---------------------------------------------------------------------------
+
+_orig_publish_inbound = bus.publish_inbound
+
+
+async def _provenance_publish_inbound(msg: InboundMessage) -> None:
+    """Gate all inbound messages before provenance and agent.
+
+    Logic order:
+    1. Telegram is_callback messages are dropped silently (button taps must
+       never reach the agent as a text turn).
+    2. Telegram text messages are passed through gate.handle_inbound; if
+       consumed (Allow/Decline/nudge), the message is not published.
+    3. All other messages are recorded as provenance and published normally.
+    """
+    if msg.channel == "telegram":
+        if msg.metadata.get("is_callback"):
+            return  # drop silently — never reaches agent or provenance
+        consumed = await gate.handle_inbound(msg.sender_id, msg.content)
+        if consumed:
+            return  # decision text / nudge — never reaches provenance or agent
+
+    provenance.record_user_message(msg.content)
+    await _orig_publish_inbound(msg)
+
+
+bus.publish_inbound = _provenance_publish_inbound  # type: ignore[method-assign]
+
+# ---------------------------------------------------------------------------
+# Telegram callback wrapping — wrap _on_callback_query before channels start
+# ---------------------------------------------------------------------------
+
+if telegram_ch is not None:
     def _log_tap_and_wrap(original_wrapped: Any) -> Any:
         """Add a per-tap log line around the already-wrapped callback handler."""
 
@@ -237,7 +267,7 @@ else:
             button_label: str = (
                 getattr(getattr(update, "callback_query", None), "data", "") or ""
             )
-            pending = _pending[0]
+            pending = gate._event
 
             if user is None:
                 _log.info("tap button=%r outcome=no-user", button_label)
@@ -281,8 +311,9 @@ else:
         telegram_ch._on_callback_query,
         confirm_grant,
         telegram_ch,
-        lambda: _pending[0],
-        _clear_pending,
+        get_pending=lambda: gate._event,
+        clear_pending=gate.clear,
+        resolve_decision=gate.resolve,
     )
     telegram_ch._on_callback_query = _log_tap_and_wrap(_inner_wrapped)  # type: ignore[method-assign]
 
@@ -319,6 +350,7 @@ async def _run() -> None:
             confirm_grant,
             guard_on=True,
             datamark_on=False,
+            await_decision=gate.await_decision,
         )
 
         async def _run_agent() -> None:

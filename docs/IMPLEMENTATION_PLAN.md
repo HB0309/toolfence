@@ -719,7 +719,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-4 NanobotAdapter — integration
-**Track:** B · **Depends on:** S-4, B-3 · **Status:** [ ] pending
+**Track:** B · **Depends on:** S-4, B-3 · **Status:** [x] done
 
 **Intent:** Build `NanobotAdapter` in `integration/nanobot_adapter.py` from `run_spike.py`'s `_run()` function. It returns a full `Trace` including status, final reply, usage with reasoning tokens, model, host, session key, and timestamp.
 
@@ -736,7 +736,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-4b Channel adapter — integration
-**Track:** B · **Depends on:** C-2 · **Status:** [ ] pending
+**Track:** B · **Depends on:** C-2 · **Status:** [x] done
 
 **Intent:** Implement the Telegram channel adapter that converts a `HeldCallEvent` into an `OutboundMessage` with buttons. Also implement `scripts/launch_gateway.py` for the live Telegram demo.
 

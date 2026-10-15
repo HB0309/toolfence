@@ -4,20 +4,25 @@ Test inventory
 --------------
   test_send_hold_card_correct_buttons             -- buttons carry #hash8 suffix
   test_wrap_callback_allow_matching_hash_stores_grant
-                                                  -- correct hash + allowed → store_pending
-  test_wrap_callback_wrong_hash_stores_nothing    -- stale card hash → no grant
-  test_wrap_callback_decline_clears_pending       -- Decline clears pending; no grant
+                                                  -- correct hash + allowed → resolve_decision(True)
+  test_wrap_callback_wrong_hash_stores_nothing    -- stale card hash → no resolution
+  test_wrap_callback_decline_clears_pending       -- Decline → resolve_decision(False)
   test_wrap_callback_no_pending_event_stores_nothing
-                                                  -- nothing held → no grant
+                                                  -- nothing held → no resolution
   test_wrap_callback_disallowed_sender_stores_nothing
-                                                  -- disallowed sender → no grant
+                                                  -- disallowed sender → no resolution
   test_store_pending_called_from_only_one_place   -- single call site in integration/
   test_import_check_channel_adapter               -- no module-level nanobot import
 
-  test_on_held_first_call_sends_card              -- first event → card sent, hash added to set
-  test_on_held_duplicate_hash_skips_card          -- same hash again → no card, returns early
-  test_on_held_different_hash_sends_card          -- different hash → card sent even if set non-empty
-  test_on_held_clear_removes_hash_from_set        -- _clear_pending removes hash; same hash fires again
+  test_gate_on_held_sends_card_once               -- first event → card task scheduled
+  test_gate_await_decision_allow                  -- "Allow" → True, store_pending called
+  test_gate_await_decision_decline                -- "Decline" → False, store_pending not called
+  test_gate_await_decision_numeric                -- "1" → True; "2" → False
+  test_gate_await_decision_timeout                -- timeout → False + timeout message sent
+  test_gate_nudge_on_unknown_text                 -- unknown text → nudge sent; future still waiting
+  test_gate_second_call_declined_immediately      -- second on_held while pending → await_decision False
+  test_gate_duplicate_waiter_declined             -- second concurrent await_decision → False immediately
+  test_gate_non_allowed_sender_passes_through     -- disallowed sender → handle_inbound False
 """
 
 from __future__ import annotations
@@ -34,7 +39,11 @@ import pytest
 
 from toolfence.contracts.guard import HeldCallEvent
 from toolfence.guard.confirm import ConfirmGrant
-from toolfence.integration.channel_adapter import send_hold_card, wrap_callback_query
+from toolfence.integration.channel_adapter import (
+    DecisionGate,
+    send_hold_card,
+    wrap_callback_query,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -69,7 +78,7 @@ def _make_update(label: str, user_id: int = 42, username: str = "alice") -> Simp
 
 
 # ---------------------------------------------------------------------------
-# Fake nanobot.bus.events module so send_hold_card runs without nanobot
+# Fake nanobot.bus.events module so send_hold_card / DecisionGate run without nanobot
 # ---------------------------------------------------------------------------
 
 
@@ -151,86 +160,96 @@ def _make_wrapper_parts(
 
 
 def test_wrap_callback_allow_matching_hash_stores_grant() -> None:
-    """Allow tap with correct #hash8 → store_pending called, pending cleared, original called."""
+    """Allow tap with correct #hash8 → resolve_decision(True) called; pending cleared; original called."""
     event = _make_event(args_hash="a3f9c112deadbeef")
     original, cg, channel, pending = _make_wrapper_parts(event=event)
+    resolve_spy: list[bool | None] = []
     wrapper = wrap_callback_query(
         original, cg, channel,
         get_pending=lambda: pending[0],
         clear_pending=lambda: pending.__setitem__(0, None),
+        resolve_decision=lambda approved: resolve_spy.append(approved),
     )
 
     _run(wrapper(_make_update("Allow #a3f9c112"), None))
 
-    assert cg._pending_tool == event.tool_name
-    assert cg._pending_hash == event.arguments_hash
+    assert resolve_spy == [True], f"resolve_decision must be called with True, got {resolve_spy}"
+    assert cg._pending_tool is None, "store_pending must not be called directly by wrap_callback_query"
     assert pending[0] is None, "pending cell must be cleared after Allow"
     original.assert_awaited_once()
 
 
 def test_wrap_callback_wrong_hash_stores_nothing() -> None:
-    """Allow tap with wrong #hash8 (stale card) → store_pending not called, pending unchanged."""
+    """Allow tap with wrong #hash8 (stale card) → resolve_decision not called; pending unchanged."""
     event = _make_event(args_hash="a3f9c112deadbeef")
     original, cg, channel, pending = _make_wrapper_parts(event=event)
+    resolve_spy: list[bool | None] = []
     wrapper = wrap_callback_query(
         original, cg, channel,
         get_pending=lambda: pending[0],
         clear_pending=lambda: pending.__setitem__(0, None),
+        resolve_decision=lambda approved: resolve_spy.append(approved),
     )
 
     _run(wrapper(_make_update("Allow #00000000"), None))  # different hash
 
-    assert cg._pending_tool is None, "store_pending must not be called for wrong hash"
+    assert resolve_spy == [], "resolve_decision must not be called for wrong hash"
     assert pending[0] is event, "pending cell must not be cleared for wrong hash"
     original.assert_awaited_once()
 
 
 def test_wrap_callback_decline_clears_pending() -> None:
-    """Decline tap with matching #hash8 → pending cleared, store_pending not called, original called."""
+    """Decline tap with matching #hash8 → resolve_decision(False) called; pending cleared; original called."""
     event = _make_event(args_hash="a3f9c112deadbeef")
     original, cg, channel, pending = _make_wrapper_parts(event=event)
+    resolve_spy: list[bool | None] = []
     wrapper = wrap_callback_query(
         original, cg, channel,
         get_pending=lambda: pending[0],
         clear_pending=lambda: pending.__setitem__(0, None),
+        resolve_decision=lambda approved: resolve_spy.append(approved),
     )
 
     _run(wrapper(_make_update("Decline #a3f9c112"), None))
 
-    assert cg._pending_tool is None, "store_pending must not be called on Decline"
+    assert resolve_spy == [False], f"resolve_decision must be called with False, got {resolve_spy}"
     assert pending[0] is None, "pending cell must be cleared on Decline"
     original.assert_awaited_once()
 
 
 def test_wrap_callback_no_pending_event_stores_nothing() -> None:
-    """Allow tap but nothing held → store_pending not called, original called."""
+    """Allow tap but nothing held → resolve_decision not called; original called."""
     original, cg, channel, pending = _make_wrapper_parts(event=None)
+    resolve_spy: list[bool | None] = []
     wrapper = wrap_callback_query(
         original, cg, channel,
         get_pending=lambda: pending[0],
         clear_pending=lambda: pending.__setitem__(0, None),
+        resolve_decision=lambda approved: resolve_spy.append(approved),
     )
 
     _run(wrapper(_make_update("Allow #a3f9c112"), None))
 
-    assert cg._pending_tool is None
+    assert resolve_spy == []
     original.assert_awaited_once()
 
 
 def test_wrap_callback_disallowed_sender_stores_nothing() -> None:
-    """Disallowed sender → store_pending not called, original called."""
+    """Disallowed sender → resolve_decision not called; original called."""
     event = _make_event(args_hash="a3f9c112deadbeef")
     original, cg, channel, pending = _make_wrapper_parts(event=event)
     channel.is_allowed.return_value = False
+    resolve_spy: list[bool | None] = []
     wrapper = wrap_callback_query(
         original, cg, channel,
         get_pending=lambda: pending[0],
         clear_pending=lambda: pending.__setitem__(0, None),
+        resolve_decision=lambda approved: resolve_spy.append(approved),
     )
 
     _run(wrapper(_make_update("Allow #a3f9c112"), None))
 
-    assert cg._pending_tool is None, "store_pending must not be called for disallowed sender"
+    assert resolve_spy == [], "resolve_decision must not be called for disallowed sender"
     original.assert_awaited_once()
 
 
@@ -277,90 +296,277 @@ def test_import_check_channel_adapter() -> None:
 
 
 # ---------------------------------------------------------------------------
-# on_held duplicate-skip logic (launch_gateway.py pattern)
-#
-# We test the duplicate-skip state machine in isolation — no nanobot required.
-# The helper below replicates the exact state and logic from launch_gateway.py
-# so we can unit-test it without importing that module (which has side effects
-# and requires nanobot + env-vars at import time).
+# DecisionGate helper
 # ---------------------------------------------------------------------------
 
 
-def _make_on_held_parts() -> tuple[
-    "list[HeldCallEvent | None]",
-    "set[str]",
-    "list[int]",
-    "Any",
-    "Any",
-]:
-    """Return (pending_cell, pending_hashes, card_send_count, on_held, clear_pending).
+def _make_gate(
+    allowed: bool = True,
+) -> tuple[DecisionGate, list[int], AsyncMock]:
+    """Build a DecisionGate with fake send_card / send_message for testing.
 
-    ``on_held`` mirrors the Telegram branch of launch_gateway.py exactly.
-    ``card_send_count[0]`` increments instead of scheduling a real asyncio task.
+    Returns (gate, card_count, send_message_spy).
+    ``card_count[0]`` increments each time send_card is called.
     """
-    pending: list[HeldCallEvent | None] = [None]
-    pending_hashes: set[str] = set()
-    card_send_count: list[int] = [0]
+    card_count: list[int] = [0]
 
-    def on_held(event: HeldCallEvent) -> None:
-        if event.arguments_hash in pending_hashes:
-            return  # duplicate — skip card
-        pending[0] = event
-        pending_hashes.add(event.arguments_hash)
-        card_send_count[0] += 1  # stand-in for asyncio task
+    async def _fake_send_card(event: HeldCallEvent) -> None:
+        card_count[0] += 1
 
-    def clear_pending() -> None:
-        ev = pending[0]
-        if ev is not None:
-            pending_hashes.discard(ev.arguments_hash)
-        pending[0] = None
+    send_message_spy = AsyncMock()
 
-    return pending, pending_hashes, card_send_count, on_held, clear_pending
+    channel = MagicMock()
+    channel.is_allowed.return_value = allowed
 
-
-def test_on_held_first_call_sends_card() -> None:
-    """First on_held call with a new hash → card sent, hash tracked in set."""
-    _, hashes, count, on_held, _ = _make_on_held_parts()
-    event = _make_event(args_hash="a3f9c112deadbeef")
-
-    on_held(event)
-
-    assert count[0] == 1, "card must be sent on first call"
-    assert "a3f9c112deadbeef" in hashes
+    gate = DecisionGate(
+        confirm_grant=ConfirmGrant(),
+        send_card=_fake_send_card,
+        channel=channel,
+        send_message=send_message_spy,
+        chat_id="test-chat",
+        channel_name="telegram",
+    )
+    return gate, card_count, send_message_spy
 
 
-def test_on_held_duplicate_hash_skips_card() -> None:
-    """Second on_held with the same hash → no additional card sent."""
-    _, _, count, on_held, _ = _make_on_held_parts()
-    event = _make_event(args_hash="a3f9c112deadbeef")
-
-    on_held(event)
-    on_held(event)  # duplicate
-
-    assert count[0] == 1, "card must be sent exactly once for a duplicate hash"
+# ---------------------------------------------------------------------------
+# DecisionGate tests
+# ---------------------------------------------------------------------------
 
 
-def test_on_held_different_hash_sends_card() -> None:
-    """Two on_held calls with different hashes → two cards sent."""
-    _, _, count, on_held, _ = _make_on_held_parts()
-    event_a = _make_event(tool_name="tool_a", args_hash="aaaaaaaabbbbbbbb")
-    event_b = _make_event(tool_name="tool_b", args_hash="ccccccccdddddddd")
+def test_gate_on_held_sends_card_once() -> None:
+    """First on_held → card task scheduled; second on_held while pending → not scheduled again."""
 
-    on_held(event_a)
-    on_held(event_b)
+    async def _run_test() -> None:
+        gate, card_count, _ = _make_gate()
+        event = _make_event(args_hash="a3f9c112deadbeef")
 
-    assert count[0] == 2, "each distinct hash must produce one card"
+        gate.on_held(event)
+        await asyncio.sleep(0)  # let the card task run
+        assert card_count[0] == 1, "card must be sent on first on_held"
+
+        gate.on_held(event)  # second call while pending
+        await asyncio.sleep(0)
+        assert card_count[0] == 1, "card must not be sent again while a decision is pending"
+
+    _run(_run_test())
 
 
-def test_on_held_clear_removes_hash_from_set() -> None:
-    """After clear_pending, the same hash fires a card again (not a duplicate)."""
-    pending, hashes, count, on_held, clear_pending = _make_on_held_parts()
-    event = _make_event(args_hash="a3f9c112deadbeef")
+def test_gate_await_decision_allow() -> None:
+    """resolve(True) via button tap → await_decision returns True; store_pending called."""
 
-    on_held(event)          # card 1 sent
-    clear_pending()         # user tapped — slot freed
-    on_held(event)          # same hash, but cleared → card 2 sent
+    async def _run_test() -> bool:
+        gate, _, _ = _make_gate()
+        event = _make_event(args_hash="a3f9c112deadbeef")
 
-    assert count[0] == 2, "after clear, the same hash must be allowed to send another card"
-    assert "a3f9c112deadbeef" in hashes, "hash must be back in set after second on_held"
-    assert pending[0] is event
+        gate.on_held(event)
+        await asyncio.sleep(0)
+
+        # Simulate a button tap resolving True (buttons-only path).
+        async def _approve() -> None:
+            await asyncio.sleep(0)
+            gate.resolve(True)
+
+        result, _ = await asyncio.gather(
+            gate.await_decision(event),
+            _approve(),
+        )
+        return result
+
+    result = _run(_run_test())
+    assert result is True, f"await_decision must return True on resolve(True), got {result!r}"
+
+
+def test_gate_await_decision_allow_stores_grant() -> None:
+    """After approve via button, confirm_grant.store_pending is populated."""
+
+    async def _run_test() -> ConfirmGrant:
+        gate, _, _ = _make_gate()
+        event = _make_event(args_hash="a3f9c112deadbeef")
+        gate.on_held(event)
+        await asyncio.sleep(0)
+
+        async def _approve() -> None:
+            await asyncio.sleep(0)
+            gate.resolve(True)
+
+        await asyncio.gather(gate.await_decision(event), _approve())
+        return gate._confirm_grant
+
+    cg = _run(_run_test())
+    assert cg._pending_tool == "mcp_book_flight"
+    assert cg._pending_hash == "a3f9c112deadbeef"
+
+
+def test_gate_await_decision_decline() -> None:
+    """resolve(False) via button tap → await_decision returns False; store_pending not called."""
+
+    async def _run_test() -> tuple[bool, ConfirmGrant]:
+        gate, _, _ = _make_gate()
+        event = _make_event(args_hash="a3f9c112deadbeef")
+        gate.on_held(event)
+        await asyncio.sleep(0)
+
+        async def _decline() -> None:
+            await asyncio.sleep(0)
+            gate.resolve(False)
+
+        result, _ = await asyncio.gather(gate.await_decision(event), _decline())
+        return result, gate._confirm_grant
+
+    result, cg = _run(_run_test())
+    assert result is False
+    assert cg._pending_tool is None, "store_pending must not be called on decline"
+
+
+def test_gate_await_decision_numeric() -> None:
+    """Typing '1' while a decision is pending sends the nudge (buttons only)."""
+
+    async def _run_test() -> tuple[bool, int]:
+        gate, _, send_message_spy = _make_gate()
+        event = _make_event(args_hash="aaaa1111bbbb2222")
+        gate.on_held(event)
+        await asyncio.sleep(0)
+
+        consumed = await gate.handle_inbound("42|alice", "1")
+        await asyncio.sleep(0)  # let nudge task run
+        return consumed, send_message_spy.call_count
+
+    consumed, nudge_count = _run(_run_test())
+    assert consumed is True, "typed '1' must be consumed (not forwarded to agent)"
+    assert nudge_count >= 1, "nudge must be sent for typed '1'"
+
+
+def test_gate_await_decision_timeout() -> None:
+    """No reply within timeout → await_decision returns False; timeout message sent."""
+
+    async def _run_test() -> tuple[bool, int]:
+        gate, _, send_message_spy = _make_gate()
+        event = _make_event(args_hash="a3f9c112deadbeef")
+        gate.on_held(event)
+        await asyncio.sleep(0)
+
+        # Patch the timeout to near-zero to keep the test fast.
+        import toolfence.integration.channel_adapter as _mod
+        original_wait_for = asyncio.wait_for
+
+        async def _fast_wait_for(fut: Any, timeout: float) -> Any:  # type: ignore[override]
+            return await original_wait_for(fut, timeout=0.01)
+
+        import unittest.mock as _mock
+        with _mock.patch("asyncio.wait_for", side_effect=_fast_wait_for):
+            result = await gate.await_decision(event)
+
+        await asyncio.sleep(0)  # allow timeout message task to run
+        return result, send_message_spy.call_count
+
+    result, msg_count = _run(_run_test())
+    assert result is False, "await_decision must return False on timeout"
+    assert msg_count >= 1, "timeout message must be sent to user"
+
+
+def test_gate_nudge_on_unknown_text() -> None:
+    """Any text while decision pending → nudge sent; consumed; future still pending."""
+
+    async def _run_test() -> tuple[bool, bool, int]:
+        gate, _, send_message_spy = _make_gate()
+        event = _make_event(args_hash="a3f9c112deadbeef")
+        gate.on_held(event)
+        await asyncio.sleep(0)
+
+        consumed = await gate.handle_inbound("42|alice", "what do you mean?")
+        await asyncio.sleep(0)  # let nudge task run
+        future_still_pending = gate._future is not None and not gate._future.done()
+        return consumed, future_still_pending, send_message_spy.call_count
+
+    consumed, still_pending, msg_count = _run(_run_test())
+    assert consumed is True, "handle_inbound must return True (consumed)"
+    assert still_pending, "future must still be pending after nudge"
+    assert msg_count >= 1, "nudge message must be sent"
+
+
+def test_gate_nudge_on_allow_text() -> None:
+    """Typing 'Allow' while decision pending → nudge sent (buttons only); future still pending."""
+
+    async def _run_test() -> tuple[bool, bool, int]:
+        gate, _, send_message_spy = _make_gate()
+        event = _make_event(args_hash="a3f9c112deadbeef")
+        gate.on_held(event)
+        await asyncio.sleep(0)
+
+        consumed = await gate.handle_inbound("42|alice", "Allow")
+        await asyncio.sleep(0)
+        future_still_pending = gate._future is not None and not gate._future.done()
+        return consumed, future_still_pending, send_message_spy.call_count
+
+    consumed, still_pending, msg_count = _run(_run_test())
+    assert consumed is True, "typed 'Allow' must be consumed (not forwarded)"
+    assert still_pending, "future must still be pending — typed Allow must not resolve"
+    assert msg_count >= 1, "nudge must be sent for typed 'Allow'"
+
+
+def test_gate_second_call_declined_immediately() -> None:
+    """Second on_held while first is pending → await_decision for second returns False immediately."""
+
+    async def _run_test() -> bool:
+        gate, _, _ = _make_gate()
+        event_a = _make_event(tool_name="tool_a", args_hash="aaaa1111bbbb2222")
+        event_b = _make_event(tool_name="tool_b", args_hash="cccc3333dddd4444")
+
+        gate.on_held(event_a)   # first hold — sets up future
+        gate.on_held(event_b)   # second hold while first pending — no-op
+
+        # await_decision for event_b must return False immediately (hash mismatch)
+        result = await gate.await_decision(event_b)
+        return result
+
+    assert _run(_run_test()) is False
+
+
+def test_gate_duplicate_waiter_declined() -> None:
+    """Two concurrent await_decision calls for same event → second returns False immediately."""
+
+    async def _run_test() -> tuple[bool, bool]:
+        gate, _, _ = _make_gate()
+        event = _make_event(args_hash="a3f9c112deadbeef")
+        gate.on_held(event)
+        await asyncio.sleep(0)
+
+        results: list[bool] = []
+
+        async def _first_waiter() -> None:
+            results.append(await gate.await_decision(event))
+
+        async def _second_waiter() -> None:
+            # Yield once so _first_waiter starts and sets _waiting=True.
+            await asyncio.sleep(0)
+            results.append(await gate.await_decision(event))
+
+        # Start both; then resolve the future to unblock the first.
+        async def _resolver() -> None:
+            await asyncio.sleep(0.01)
+            gate.resolve(False)
+
+        await asyncio.gather(
+            _first_waiter(),
+            _second_waiter(),
+            _resolver(),
+        )
+        # results[1] is the second waiter — must be False immediately
+        return results[0], results[1]
+
+    first_result, second_result = _run(_run_test())
+    assert second_result is False, "duplicate waiter must get False immediately"
+
+
+def test_gate_non_allowed_sender_passes_through() -> None:
+    """handle_inbound from disallowed sender → returns False (message not consumed)."""
+
+    async def _run_test() -> bool:
+        gate, _, _ = _make_gate(allowed=False)
+        event = _make_event(args_hash="a3f9c112deadbeef")
+        gate.on_held(event)
+        await asyncio.sleep(0)
+        return await gate.handle_inbound("99|mallory", "Allow")
+
+    assert _run(_run_test()) is False

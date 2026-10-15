@@ -36,7 +36,7 @@ These issues are tracked for a later task.  Do not attempt to fix them here.
 """
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from toolfence.contracts.guard import HeldCallEvent
 from toolfence.contracts.surface import SurfaceFile
@@ -66,6 +66,7 @@ def install_guard(
     *,
     guard_on: bool,
     datamark_on: bool,
+    await_decision: Callable[[HeldCallEvent], Awaitable[bool]] | None = None,
 ) -> None:
     """Wrap every tool in ``registry._tools`` with ``GuardedProxy``.
 
@@ -93,6 +94,7 @@ def install_guard(
             confirm_grant,
             guard_on=guard_on,
             datamark_on=datamark_on,
+            await_decision=await_decision,
         )
 
     for name, tool in list(registry._tools.items()):
