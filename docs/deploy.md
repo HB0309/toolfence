@@ -39,8 +39,7 @@ ibmcloud ce project select --name toolfence
 ## 2. Build and push the container image
 
 The dashboard is served by `python -m toolfence serve` (stdlib `http.server` only — no extra
-dependencies beyond what `pip install -e .` provides). Build and push a container image using
-the provided `Dockerfile` (or the inline command below):
+dependencies beyond what `pip install -e .` provides). Build and push a container image:
 
 ```bash
 # From the repo root
@@ -52,14 +51,6 @@ ibmcloud ce build create \
   --size small
 
 ibmcloud ce build run --name toolfence-dashboard-build
-```
-
-Alternatively, build locally and push to IBM Container Registry:
-
-```bash
-docker build -t us.icr.io/<YOUR_NAMESPACE>/toolfence-dashboard:latest .
-ibmcloud cr login
-docker push us.icr.io/<YOUR_NAMESPACE>/toolfence-dashboard:latest
 ```
 
 ---

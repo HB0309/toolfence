@@ -300,3 +300,162 @@ def test_api_results_excludes_non_trial_records(tmp_path: Path) -> None:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+
+# ---------------------------------------------------------------------------
+# Multi-run support (Sub-Task 2)
+# ---------------------------------------------------------------------------
+
+def _start_server(tmp_path: Path) -> tuple[str, subprocess.Popen]:
+    """Start a dashboard server against tmp_path; return (base_url, proc).
+
+    Caller is responsible for terminating the process.
+    """
+    import socket
+
+    port = _free_port()
+    proc = subprocess.Popen(
+        [
+            _PYTHON, "-m", "toolfence", "serve",
+            "--host", "127.0.0.1",
+            "--port", str(port),
+            "--results-dir", str(tmp_path),
+        ],
+        cwd=str(_REPO_ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    base_url = f"http://127.0.0.1:{port}"
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1):
+                break
+        except OSError:
+            time.sleep(0.1)
+    return base_url, proc
+
+
+def _stop_server(proc: subprocess.Popen) -> None:
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
+def _make_run_dirs(tmp_path: Path, names: list[str]) -> None:
+    """Create named subdirectories under tmp_path, each with a valid TrialRecord JSON."""
+    import shutil
+
+    src = _FIXTURE_DIR / "run-01.json"
+    for name in names:
+        sub = tmp_path / name
+        sub.mkdir()
+        shutil.copy(src, sub / "run-01.json")
+
+
+def test_api_runs_with_subfolders(tmp_path: Path) -> None:
+    """GET /api/runs returns sorted list of subfolder names that contain *.json."""
+    _make_run_dirs(tmp_path, ["run_a", "run_b"])
+    base_url, proc = _start_server(tmp_path)
+    try:
+        status, body = _get(base_url + "/api/runs")
+        assert status == 200, f"Expected 200 from /api/runs, got {status}"
+        runs = json.loads(body)
+        assert runs == ["run_a", "run_b"], f"Expected ['run_a', 'run_b'], got {runs}"
+    finally:
+        _stop_server(proc)
+
+
+def test_api_runs_flat_returns_empty(tmp_path: Path) -> None:
+    """GET /api/runs returns [] when results dir has only flat *.json files."""
+    import shutil
+
+    shutil.copy(_FIXTURE_DIR / "run-01.json", tmp_path / "run-01.json")
+    base_url, proc = _start_server(tmp_path)
+    try:
+        status, body = _get(base_url + "/api/runs")
+        assert status == 200, f"Expected 200 from /api/runs, got {status}"
+        runs = json.loads(body)
+        assert runs == [], f"Expected [], got {runs}"
+    finally:
+        _stop_server(proc)
+
+
+def test_api_summary_with_run_param(tmp_path: Path) -> None:
+    """GET /api/summary?run=run_a returns 200 with a valid summary containing 'disclaimer'."""
+    _make_run_dirs(tmp_path, ["run_a"])
+    base_url, proc = _start_server(tmp_path)
+    try:
+        status, body = _get(base_url + "/api/summary?run=run_a")
+        assert status == 200, f"Expected 200 from /api/summary?run=run_a, got {status}"
+        summary = json.loads(body)
+        assert "disclaimer" in summary, "Expected 'disclaimer' key in summary JSON"
+        assert summary["disclaimer"], "Expected non-empty disclaimer"
+    finally:
+        _stop_server(proc)
+
+
+def test_api_results_with_run_param(tmp_path: Path) -> None:
+    """GET /api/results?run=run_a returns 200 JSON array with at least 1 record."""
+    _make_run_dirs(tmp_path, ["run_a"])
+    base_url, proc = _start_server(tmp_path)
+    try:
+        status, body = _get(base_url + "/api/results?run=run_a")
+        assert status == 200, f"Expected 200 from /api/results?run=run_a, got {status}"
+        records = json.loads(body)
+        assert isinstance(records, list), "Expected JSON array"
+        assert len(records) >= 1, f"Expected at least 1 record, got {len(records)}"
+    finally:
+        _stop_server(proc)
+
+
+def test_api_run_path_traversal_rejected(tmp_path: Path) -> None:
+    """GET /api/summary?run=../secret must return 400."""
+    import http.client
+    import socket
+
+    base_url, proc = _start_server(tmp_path)
+    try:
+        port = int(base_url.split(":")[-1])
+        # Use http.client to send the raw query string without normalisation
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", "/api/summary?run=..%2Fsecret")
+        resp = conn.getresponse()
+        assert resp.status == 400, (
+            f"Expected 400 for path traversal attempt (?run=../secret), got {resp.status}"
+        )
+        conn.close()
+    finally:
+        _stop_server(proc)
+
+
+def test_api_run_slash_rejected(tmp_path: Path) -> None:
+    """GET /api/summary?run=a/b must return 400."""
+    import http.client
+
+    base_url, proc = _start_server(tmp_path)
+    try:
+        port = int(base_url.split(":")[-1])
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", "/api/summary?run=a%2Fb")
+        resp = conn.getresponse()
+        assert resp.status == 400, (
+            f"Expected 400 for slash in run name (?run=a/b), got {resp.status}"
+        )
+        conn.close()
+    finally:
+        _stop_server(proc)
+
+
+def test_api_run_not_found(tmp_path: Path) -> None:
+    """GET /api/summary?run=nonexistent returns 404 when no such subfolder exists."""
+    base_url, proc = _start_server(tmp_path)
+    try:
+        status, _ = _get(base_url + "/api/summary?run=nonexistent")
+        assert status == 404, (
+            f"Expected 404 for missing run subfolder, got {status}"
+        )
+    finally:
+        _stop_server(proc)
