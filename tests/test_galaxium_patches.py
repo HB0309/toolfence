@@ -137,3 +137,15 @@ def test_ownership_checks(patched_tmp):
         f"stdout:\n{result.stdout}\n"
         f"stderr:\n{result.stderr}"
     )
+
+
+def test_frontend_traveler_header(patched_tmp):
+    """
+    After all patches are applied to the extracted copy:
+    - booking_system_frontend/src/services/api.ts contains 'X-Traveler-Id' twice.
+    """
+    api_ts = (patched_tmp / "booking_system_frontend" / "src" / "services" / "api.ts").read_text(encoding="utf-8")
+    assert api_ts.count("X-Traveler-Id") == 2, (
+        f"Expected 'X-Traveler-Id' to appear exactly 2 times in api.ts, "
+        f"got {api_ts.count('X-Traveler-Id')}"
+    )
