@@ -296,9 +296,9 @@ Decision rules (GRD-7):
 
 **User-message feed (GRD-4, GRD-9):** `GuardedProxy` must see every inbound user message to:
 - Record user-typed values in `ProvenanceStore` with label `user`.
-- Check for a pending confirm grant (Allow/Decline button press).
+- Decide on held calls via Telegram button taps (not typed text).
 
-In `scripts/launch_gateway.py`, the launcher wraps `bus.publish_inbound` to call `provenance_store.record_user_message(msg.content)` for every typed inbound message. Button taps carry `metadata["is_callback"] = True` and are excluded from provenance recording. Grant detection is callback-only: `wrap_callback_query` in `toolfence/integration/channel_adapter.py` intercepts `TelegramChannel._on_callback_query` and calls `confirm_grant.store_pending(tool_name, arguments_hash)` when a matching Allow button is tapped.
+In `scripts/launch_gateway.py`, the launcher wraps `bus.publish_inbound`: button-tap messages are dropped by the launcher before they reach the agent; typed messages are passed to `provenance_store.record_user_message(msg.content)` and, when a decision is pending, to `DecisionGate.handle_inbound` — which consumes the message and replies with a nudge rather than forwarding it. Actual resolution comes only from the inline-keyboard callback: `wrap_callback_query` in `toolfence/integration/channel_adapter.py` intercepts `TelegramChannel._on_callback_query` and calls `DecisionGate.resolve(True/False)` when a matching Allow/Decline button is tapped. `DecisionGate.await_decision` then calls `confirm_grant.store_pending(tool_name, arguments_hash)` — **this is the only `store_pending` call site in `toolfence/integration/`**. `GuardedProxy` receives `await_decision` as a constructor parameter and awaits it when a call is held.
 
 **HeldCallEvent** (emitted by `GuardedProxy` on a hold, consumed by `toolfence/integration/channel_adapter.py`):
 
@@ -636,9 +636,9 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 **Req IDs:** GRD-9
 
 **Files:**
-- `toolfence/guard/confirm.py` — `ConfirmGrant`: `store_pending(tool_name, args_hash)`, `consume_grant(tool_name, args_hash, source) -> bool` — `source` must be `"user"`; grant consumed on first match; no nanobot import
-- Updated `toolfence/guard/proxy.py` — on retry, checks `ConfirmGrant.consume_grant` before calling `decide`; if grant matches and source is `user`, bypasses `decide` and calls `tool.execute()`
-- `tests/test_confirm.py` — matching user-sourced grant → pass; different arguments → hold; grant arriving as tool result (source `"first-party"`) → hold
+- `toolfence/guard/confirm.py` — `ConfirmGrant`: `store_pending(tool_name, args_hash)`, `consume_grant(tool_name, args_hash) -> bool` — grant consumed on first match; no nanobot import; no `source` parameter
+- Updated `toolfence/guard/proxy.py` — at the top of `execute`, calls `confirm_grant.consume_grant(tool_name, args_hash)` before running Guard; on a hold with `await_decision` provided, awaits it and then calls `consume_grant` to complete the grant
+- `tests/test_confirm.py` — `test_consume_matching_grant`: stored grant consumed once then cleared; `test_consume_wrong_args_hash`: hash mismatch → False, grant not cleared; `test_proxy_confirm_retry_passes`: hold → `store_pending` → retry → `tool.execute` called; `test_proxy_confirm_retry_different_args`: retry with different args → hold again; `test_import_check_confirm`: no nanobot / LLM / engine import, no button-label strings
 
 **Test:** `pytest tests/test_confirm.py` green (3 test cases per GRD-9).
 
@@ -743,13 +743,13 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 **Req IDs:** GRD-10, PG-10
 
 **Files:**
-- `toolfence/integration/channel_adapter.py` — `send_hold_card(event, send_message, chat_id, channel_name)`: builds hashed buttons `[["Allow #<hash8>", "Decline #<hash8>"]]` and sends `OutboundMessage`; `wrap_callback_query(original, confirm_grant, channel, get_pending, clear_pending)`: wraps `TelegramChannel._on_callback_query` and calls `confirm_grant.store_pending` only for an Allow tap whose `#hash8` suffix matches the currently-held event
-- `scripts/launch_gateway.py` — Minimal demo gateway launcher: constructs `bus`, `tools`, `mcp_provider`, `channels` directly; wraps `bus.publish_inbound` for provenance; wraps `_on_callback_query` before channels start; `on_held` is sync and uses `asyncio.get_running_loop().create_task(...)` to send the card
-- `tests/test_integration.py` — 8 unit tests; no nanobot required: correct hashed buttons, Allow/Decline/wrong-hash/no-pending/disallowed-sender paths, single call-site of `store_pending`, module-level import check
+- `toolfence/integration/channel_adapter.py` — `send_hold_card(event, send_message, chat_id, channel_name)`: builds hashed buttons `[["Allow #<hash8>", "Decline #<hash8>"]]` and sends `OutboundMessage`; `DecisionGate`: owns all hold-decision state — sends the confirm card, creates and awaits an `asyncio.Future` (120 s timeout), calls `confirm_grant.store_pending` (the only call site in `integration/`) before returning `True` from `await_decision`, handles typed messages via `handle_inbound` with a nudge; `wrap_callback_query(original, confirm_grant, channel, get_pending, clear_pending, *, resolve_decision=None)`: wraps `TelegramChannel._on_callback_query` and calls `resolve_decision(True/False)` when a matching Allow/Decline tap is detected
+- `scripts/launch_gateway.py` — Minimal demo gateway launcher: constructs `bus`, `tools`, `mcp_provider`, `channels` directly; wraps `bus.publish_inbound` for provenance and `DecisionGate.handle_inbound`; wraps `_on_callback_query` via `wrap_callback_query`; passes `gate.await_decision` into `install_guard`
+- `tests/test_integration.py` — 19 unit tests; no nanobot required: correct hashed buttons, Allow/Decline/wrong-hash/no-pending/disallowed-sender paths, single call-site of `store_pending`, module-level import check, plus `DecisionGate` tests (card sent once, allow/decline/timeout/nudge/duplicate-waiter/second-call-declined/non-allowed-sender paths)
 
 **Test:** `pytest tests/test_integration.py` green.
 
-**Done when:** Buttons carry `#hash8` suffix; wrong-hash tap stores nothing; Decline clears pending without storing a grant; disallowed sender stores nothing; exactly one `store_pending` call site in `integration/`; `pytest tests/test_integration.py` green.
+**Done when:** Buttons carry `#hash8` suffix; wrong-hash tap resolves nothing; Decline resolves future with `False`; disallowed sender stores nothing; exactly one `store_pending` call site in `integration/` (inside `DecisionGate.await_decision`); `pytest tests/test_integration.py` green.
 
 ---
 
@@ -960,7 +960,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 | Unit | `spawn` and `exec` absent after install | `tests/test_installer.py` |
 | Unit | `read_file` result recorded in provenance store after proxy executes | `tests/test_installer.py` |
 | Unit | Channel adapter → `OutboundMessage` with hashed buttons `["Allow #<hash8>", "Decline #<hash8>"]` | `tests/test_integration.py` |
-| Unit | `wrap_callback_query`: wrong-hash tap stores nothing; Decline clears pending; disallowed sender stores nothing | `tests/test_integration.py` |
+| Unit | `DecisionGate` / `wrap_callback_query`: wrong-hash tap resolves nothing; Decline resolves `False`; disallowed sender stores nothing; `store_pending` called only inside `await_decision` | `tests/test_integration.py` |
 | Contract | `NanobotAdapter` returns `Trace` with all required fields incl. `reasoning_tokens` | `tests/test_nanobot_adapter.py` |
 | Contract | `NanobotAdapter` + `ScriptedAdapter` both pass `adapter_contract` | `tests/test_nanobot_adapter.py` |
 | Patch | Galaxium tests pass after all patches; reviews endpoint returns seeded rows | `tests/test_galaxium_patches.py` |
