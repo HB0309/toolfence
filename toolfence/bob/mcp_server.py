@@ -102,18 +102,29 @@ async def scan_surface(source: str) -> CallToolResult:
 
 @mcp.tool(description=(
     "Run the evaluation matrix using the scripted adapter and return trial records (BOB-4). "
+    "Provide exactly one of surface_path (file path) or surface_json (inline JSON string). "
     "channels: subset of ['user-input','tool-result'] (default: both). "
     "defenses: subset of ['none','datamarking','instructional'] (default: all 6 conditions). "
     "Unknown values cause an error response."
 ))
 async def run_eval(
-    surface_path: str,
+    surface_path: str = "",
+    surface_json: str = "",
     channels: Optional[list[str]] = None,
     defenses: Optional[list[str]] = None,
 ) -> CallToolResult:
     from toolfence.contracts.surface import SurfaceFile
     from toolfence.engine.adapter import ScriptedAdapter
     from toolfence.engine.runner import DEFAULT_DEFENSES, EvaluationRunner
+
+    # Exactly one of surface_path / surface_json must be given
+    have_path = bool(surface_path)
+    have_json = bool(surface_json)
+    if have_path == have_json:  # both truthy or both falsy
+        return _err(
+            "Provide exactly one of 'surface_path' (file path) or "
+            "'surface_json' (inline JSON string), not both or neither."
+        )
 
     # Validate channels
     active_channels = set(channels) if channels is not None else _VALID_CHANNELS
@@ -135,11 +146,15 @@ async def run_eval(
 
     # Load surface
     try:
-        surface = SurfaceFile.model_validate(
-            json.loads(Path(surface_path).read_text(encoding="utf-8"))
-        )
+        if have_json:
+            surface = SurfaceFile.model_validate_json(surface_json)
+        else:
+            surface = SurfaceFile.model_validate(
+                json.loads(Path(surface_path).read_text(encoding="utf-8"))
+            )
     except Exception as exc:  # noqa: BLE001
-        return _err(f"Could not load surface {surface_path!r}: {exc}")
+        label = "surface_json" if have_json else f"surface {surface_path!r}"
+        return _err(f"Could not load {label}: {exc}")
 
     # Build attack probes for requested channels
     attack_probes = []

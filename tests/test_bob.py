@@ -1,25 +1,35 @@
-"""B-6a — ToolFence MCP server tests.
+"""B-6a / B-6b — ToolFence MCP server, Auditor mode, and skill tests.
 
 Covers:
+  BOB-1   Auditor custom mode has only read/mcp/skill groups (no edit, no execute).
   BOB-2   Tool list is exactly four named tools.
   BOB-3   scan_surface returns a SurfaceFile-schema-valid JSON string.
   BOB-4   run_eval returns a list of TrialRecord-schema-valid JSON objects;
-          unknown channel / defense values return isError=True.
+          unknown channel / defense values return isError=True;
+          surface_json accepted as alternative to surface_path; both/neither is an error.
   BOB-5   propose_fix returns surface_proposal, enabled_tools, open_findings;
           enabled_tools matches config/nanobot.eval.json enabledTools.
   BOB-6   render_report markdown output contains the ENG-8 disclaimer.
   BOB-7   No .bob/rules-* file has been modified since the commit that added it.
+  BOB-8   ToolFence skill has valid frontmatter (name matches folder, non-empty
+          description) and mentions all four MCP tool names in its body.
 
 Test inventory
 --------------
   test_tool_list_is_exactly_four
   test_scan_surface_returns_valid_surface
   test_run_eval_returns_trial_records
+  test_run_eval_accepts_surface_json
+  test_run_eval_both_surface_inputs_is_error
+  test_run_eval_neither_surface_input_is_error
   test_run_eval_unknown_channel_is_error
   test_run_eval_unknown_defense_is_error
   test_propose_fix_returns_surface_and_tools
   test_render_report_contains_disclaimer
   test_no_existing_bob_file_modified
+  test_auditor_mode_has_no_edit_or_execute
+  test_toolfence_skill_has_name_and_description
+  test_toolfence_skill_mentions_all_four_tools
 """
 
 from __future__ import annotations
@@ -111,6 +121,61 @@ def test_run_eval_returns_trial_records():
 
     for rec in records:
         jsonschema.validate(instance=rec, schema=trial_schema)
+
+
+# ---------------------------------------------------------------------------
+# test_run_eval_accepts_surface_json  (BOB-4 surface_json)
+# ---------------------------------------------------------------------------
+
+def test_run_eval_accepts_surface_json():
+    """run_eval accepts surface_json (inline JSON) as an alternative to surface_path."""
+    trial_schema = json.loads(_TRIAL_SCHEMA_PATH.read_text(encoding="utf-8"))
+
+    from toolfence.bob.mcp_server import mcp
+
+    surface_json_str = _SURFACE_FIXTURE.read_text(encoding="utf-8")
+    result = _run(mcp.call_tool("run_eval", {
+        "surface_json": surface_json_str,
+        "channels": ["user-input"],
+        "defenses": ["none"],
+    }))
+    assert not result.is_error, f"run_eval with surface_json returned error: {result.content}"
+
+    records = json.loads(result.content[0].text)
+    assert isinstance(records, list) and len(records) >= 1
+    for rec in records:
+        jsonschema.validate(instance=rec, schema=trial_schema)
+
+
+# ---------------------------------------------------------------------------
+# test_run_eval_both_surface_inputs_is_error  (BOB-4 surface_json)
+# ---------------------------------------------------------------------------
+
+def test_run_eval_both_surface_inputs_is_error():
+    """Supplying both surface_path and surface_json must return isError=True."""
+    from toolfence.bob.mcp_server import mcp
+
+    result = _run(mcp.call_tool("run_eval", {
+        "surface_path": str(_SURFACE_FIXTURE),
+        "surface_json": _SURFACE_FIXTURE.read_text(encoding="utf-8"),
+    }))
+    assert result.is_error
+
+
+# ---------------------------------------------------------------------------
+# test_run_eval_neither_surface_input_is_error  (BOB-4 surface_json)
+# ---------------------------------------------------------------------------
+
+def test_run_eval_neither_surface_input_is_error():
+    """Supplying neither surface_path nor surface_json must return isError=True."""
+    from toolfence.bob.mcp_server import mcp
+
+    result = _run(mcp.call_tool("run_eval", {
+        "channels": ["user-input"],
+        "defenses": ["none"],
+    }))
+    assert result.is_error
+
 
 
 # ---------------------------------------------------------------------------
@@ -272,3 +337,82 @@ def test_no_existing_bob_file_modified():
         f"Galaxium's .bob/ has changed since pinned commit 6163380:\n"
         + "\n".join(f"  {p}" for p in changed.splitlines())
     )
+
+
+# ---------------------------------------------------------------------------
+# test_auditor_mode_has_no_edit_or_execute  (BOB-1)
+# ---------------------------------------------------------------------------
+
+def test_auditor_mode_has_no_edit_or_execute():
+    """Assert the auditor slug exists and has no edit/execute permission group."""
+    import yaml
+
+    modes_file = _REPO_ROOT / ".bob" / "custom_modes.yaml"
+    assert modes_file.exists(), ".bob/custom_modes.yaml not found"
+
+    data = yaml.safe_load(modes_file.read_text(encoding="utf-8"))
+    modes = data.get("customModes", [])
+
+    slugs = [m.get("slug") for m in modes]
+    assert "auditor" in slugs, f"'auditor' slug not found in customModes; got: {slugs}"
+
+    auditor = next(m for m in modes if m.get("slug") == "auditor")
+    groups = auditor.get("groups", [])
+
+    # Flatten: groups may contain strings or nested lists like [['edit', {'fileRegex': '...'}]]
+    def _flatten(g):
+        for item in g:
+            if isinstance(item, list):
+                yield from _flatten(item)
+            elif isinstance(item, str):
+                yield item
+
+    flat_groups = set(_flatten(groups))
+    assert "edit" not in flat_groups, (
+        f"'auditor' mode must not have 'edit' permission; found groups: {groups}"
+    )
+    assert "execute" not in flat_groups, (
+        f"'auditor' mode must not have 'execute' permission; found groups: {groups}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# test_toolfence_skill_has_name_and_description  (BOB-8)
+# ---------------------------------------------------------------------------
+
+def test_toolfence_skill_has_name_and_description():
+    """Assert the toolfence skill has valid frontmatter: name matches folder, description non-empty."""
+    import yaml
+
+    skill_file = _REPO_ROOT / ".bob" / "skills" / "toolfence" / "SKILL.md"
+    assert skill_file.exists(), ".bob/skills/toolfence/SKILL.md not found"
+
+    raw = skill_file.read_text(encoding="utf-8")
+    # Parse frontmatter between the first two '---' delimiters
+    parts = raw.split("---", 2)
+    assert len(parts) >= 3, "SKILL.md missing YAML frontmatter delimiters"
+
+    fm = yaml.safe_load(parts[1])
+    assert fm.get("name") == "toolfence", (
+        f"Skill 'name' must equal 'toolfence' (matches folder); got: {fm.get('name')!r}"
+    )
+    description = fm.get("description", "")
+    assert isinstance(description, str) and description.strip(), (
+        "Skill 'description' must be a non-empty string"
+    )
+
+
+# ---------------------------------------------------------------------------
+# test_toolfence_skill_mentions_all_four_tools  (BOB-8)
+# ---------------------------------------------------------------------------
+
+def test_toolfence_skill_mentions_all_four_tools():
+    """Assert the toolfence skill body references all four ToolFence MCP tool names."""
+    skill_file = _REPO_ROOT / ".bob" / "skills" / "toolfence" / "SKILL.md"
+    assert skill_file.exists(), ".bob/skills/toolfence/SKILL.md not found"
+
+    text = skill_file.read_text(encoding="utf-8")
+    for tool_name in ("scan_surface", "run_eval", "propose_fix", "render_report"):
+        assert tool_name in text, (
+            f"ToolFence skill must mention '{tool_name}' but it was not found in SKILL.md"
+        )

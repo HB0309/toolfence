@@ -842,14 +842,14 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-6b Auditor mode and skill — Bob integration
-**Track:** B · **Depends on:** B-6a · **Status:** [ ] pending
+**Track:** B · **Depends on:** B-6a · **Status:** [x] done
 
 **Intent:** Auditor custom mode and ToolFence skill SKILL.md.
 
 **Req IDs:** BOB-1, BOB-7, BOB-8
 
 **Files:**
-- `.bob/modes/auditor.yaml` — read-only permission group; calls ToolFence MCP tools and reads files; cannot edit code or run state-changing shell commands
+- `.bob/custom_modes.yaml` — read-only permission group; calls ToolFence MCP tools and reads files; cannot edit code or run state-changing shell commands
 - `.bob/skills/toolfence/SKILL.md` — frontmatter: `name: toolfence`, `description: scan → fix → re-verify`; body describes the three-step workflow
 - `tests/test_bob.py` — extended: skill file passes Bob skill schema validation (BOB-8); mode permission group is read-only (BOB-1)
 
