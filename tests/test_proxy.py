@@ -482,3 +482,100 @@ def test_import_checks_card() -> None:
     """guard/card.py must not import nanobot, any LLM client, or toolfence.engine."""
     src = Path(__file__).parent.parent / "toolfence" / "guard" / "card.py"
     _check_no_forbidden_imports(src, "guard/card.py")
+
+
+# ---------------------------------------------------------------------------
+# await_decision optional kwarg tests
+# ---------------------------------------------------------------------------
+
+def test_await_decision_allow_calls_tool() -> None:
+    """await_decision=True + matching grant → tool.execute() called, real result returned."""
+    tool = _make_tool(_IRREVERSIBLE_TOOL, result="booking cancelled")
+    cg = ConfirmGrant()
+    held: list[HeldCallEvent] = []
+
+    async def _allow(event: HeldCallEvent) -> bool:
+        # Simulate Track B storing the grant when it calls await_decision.
+        cg.store_pending(event.tool_name, event.arguments_hash)
+        return True
+
+    proxy = GuardedProxy(
+        tool,
+        _load_surface(),
+        ProvenanceStore(),
+        SessionTaint(),
+        GuardDecision(),
+        held.append,
+        cg,
+        guard_on=True,
+        await_decision=_allow,
+    )
+
+    result = _run(proxy.execute(booking_id="BK-1"))
+    assert result == "booking cancelled", f"Expected real result, got {result!r}"
+    tool.execute.assert_called_once()
+    assert len(held) == 1, "on_held must still be called even when await_decision is provided"
+
+
+def test_await_decision_deny_returns_decline_sentinel() -> None:
+    """await_decision=False → tool not called, decline sentinel returned."""
+    tool = _make_tool(_IRREVERSIBLE_TOOL)
+    cg = ConfirmGrant()
+    held: list[HeldCallEvent] = []
+
+    async def _deny(event: HeldCallEvent) -> bool:
+        return False
+
+    proxy = GuardedProxy(
+        tool,
+        _load_surface(),
+        ProvenanceStore(),
+        SessionTaint(),
+        GuardDecision(),
+        held.append,
+        cg,
+        guard_on=True,
+        await_decision=_deny,
+    )
+
+    result = _run(proxy.execute(booking_id="BK-2"))
+    assert "Declined" in result, f"Expected decline sentinel, got {result!r}"
+    assert "Do not retry" in result, f"Expected retry instruction in sentinel, got {result!r}"
+    tool.execute.assert_not_called()
+
+
+def test_await_decision_allow_but_grant_not_stored_returns_decline() -> None:
+    """await_decision=True but consume_grant fails (grant not stored) → decline sentinel."""
+    tool = _make_tool(_IRREVERSIBLE_TOOL)
+    cg = ConfirmGrant()  # nothing stored
+    held: list[HeldCallEvent] = []
+
+    async def _allow_without_storing(event: HeldCallEvent) -> bool:
+        return True  # returns True but forgot to store_pending
+
+    proxy = GuardedProxy(
+        tool,
+        _load_surface(),
+        ProvenanceStore(),
+        SessionTaint(),
+        GuardDecision(),
+        held.append,
+        cg,
+        guard_on=True,
+        await_decision=_allow_without_storing,
+    )
+
+    result = _run(proxy.execute(booking_id="BK-3"))
+    assert "Declined" in result, f"Expected decline sentinel when grant missing, got {result!r}"
+    tool.execute.assert_not_called()
+
+
+def test_no_await_decision_returns_hold_sentinel() -> None:
+    """Without await_decision (None), the original hold sentinel is returned unchanged."""
+    tool = _make_tool(_IRREVERSIBLE_TOOL)
+    proxy, held = _make_proxy(tool, guard_on=True)
+
+    result = _run(proxy.execute(booking_id="BK-4"))
+    assert "paused" in result.lower(), f"Expected hold sentinel, got {result!r}"
+    tool.execute.assert_not_called()
+    assert len(held) == 1
