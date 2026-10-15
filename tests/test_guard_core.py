@@ -544,3 +544,60 @@ def test_c1_guard_core_pipeline() -> None:
             "traveler_id": fresh_store.resolve_argument(1),
         },
     ) == "pass"
+
+
+# ===========================================================================
+# Multi-word substring provenance tests
+# ===========================================================================
+
+class TestProvenanceMultiWordSubstring:
+    """Multi-word values that are sub-phrases of recorded messages/results."""
+
+    def setup_method(self) -> None:
+        self.store = ProvenanceStore()
+
+    def test_multiword_name_in_user_sentence_resolves_as_user(self) -> None:
+        """'Harsh Bhaskar' typed in a sentence → still 'user' when resolved."""
+        self.store.record_user_message("Book for Harsh Bhaskar please")
+        assert self.store.resolve_argument("Harsh Bhaskar") == "user"
+
+    def test_multiword_name_exact_message_still_user(self) -> None:
+        """Full message is also stored, so exact match still works."""
+        self.store.record_user_message("Harsh Bhaskar")
+        assert self.store.resolve_argument("Harsh Bhaskar") == "user"
+
+    def test_multiword_from_first_party_result_resolves_as_first_party(self) -> None:
+        """A two-word value sub-phrase in a first-party result → 'first-party'."""
+        self.store.record_tool_result(
+            "some_tool",
+            "Passenger: Harsh Bhaskar seat 14A",
+            label="first-party",
+        )
+        assert self.store.resolve_argument("Harsh Bhaskar") == "first-party"
+
+    def test_multiword_from_untrusted_result_resolves_as_untrusted(self) -> None:
+        """A two-word value sub-phrase in an untrusted result → 'untrusted'."""
+        self.store.record_tool_result(
+            "review_tool",
+            "reviewer Harsh Bhaskar said excellent",
+            label="untrusted",
+        )
+        assert self.store.resolve_argument("Harsh Bhaskar") == "untrusted"
+
+    def test_multiword_user_priority_over_untrusted_result(self) -> None:
+        """User sentence wins over untrusted result for the same multi-word phrase."""
+        self.store.record_tool_result(
+            "review_tool",
+            "reviewer Harsh Bhaskar said excellent",
+            label="untrusted",
+        )
+        self.store.record_user_message("Book for Harsh Bhaskar please")
+        assert self.store.resolve_argument("Harsh Bhaskar") == "user"
+
+    def test_single_word_not_affected(self) -> None:
+        """Single-word values use the normal lookup, not the substring fallback."""
+        # Not stored → untrusted (fail-closed)
+        assert self.store.resolve_argument("Bhaskar") == "untrusted"
+        # Stored as user token → user
+        self.store.record_user_message("Bhaskar")
+        assert self.store.resolve_argument("Bhaskar") == "user"

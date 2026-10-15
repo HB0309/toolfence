@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "toolfence": {
+      "command": ".venv/Scripts/python",
+      "args": ["-m", "toolfence.bob.mcp_server"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}

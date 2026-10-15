@@ -1,0 +1,219 @@
+diff --git a/booking_system_backend/server.py b/booking_system_backend/server.py
+index d213940..fa4e6a0 100644
+--- a/booking_system_backend/server.py
++++ b/booking_system_backend/server.py
+@@ -3,13 +3,13 @@ from contextlib import asynccontextmanager
+ 
+ import httpx
+ from dotenv import load_dotenv
+-from fastapi import Depends, FastAPI, HTTPException
++from fastapi import Depends, FastAPI, HTTPException, Request
+ from fastapi.middleware.cors import CORSMiddleware
+ from fastapi_mcp import FastApiMCP
+ from sqlalchemy.orm import Session
+ 
+ from db import get_db, init_db
+-from models import Review
++from models import Booking, Review
+ from schemas import (
+     BookingOut,
+     BookingRequest,
+@@ -170,18 +170,34 @@ def book_flight_endpoint(request: BookingRequest, db: Session = Depends(get_db))
+ 
+ 
+ @app.get("/bookings/{user_id}", response_model=list[BookingOut], tags=["Bookings"])
+-def get_user_bookings(user_id: int, db: Session = Depends(get_db)):
++def get_user_bookings(user_id: int, request: Request, db: Session = Depends(get_db)):
+     """Retrieve all bookings for a specific user by user_id."""
++    traveler_id_raw = request.headers.get("x-traveler-id")
++    try:
++        traveler_id = int(traveler_id_raw)
++    except (TypeError, ValueError):
++        raise HTTPException(status_code=403, detail="Missing or invalid X-Traveler-Id header")
++    if traveler_id != user_id:
++        raise HTTPException(status_code=403, detail="Forbidden")
+     return booking.get_bookings(db, user_id)
+ 
+ 
+ @app.post("/cancel/{booking_id}", response_model=BookingOut, tags=["Bookings"])
+-def cancel_booking_endpoint(booking_id: int, db: Session = Depends(get_db)):
++def cancel_booking_endpoint(booking_id: int, request: Request, db: Session = Depends(get_db)):
+     """Cancel an existing booking by its booking_id.
+ 
+     Increments available seats for the flight if successful.
++    Raises 403 if the traveller does not own the booking.
+     Raises 404 if the booking is not found, 409 if already cancelled.
+     """
++    traveler_id_raw = request.headers.get("x-traveler-id")
++    try:
++        traveler_id = int(traveler_id_raw)
++    except (TypeError, ValueError):
++        raise HTTPException(status_code=403, detail="Missing or invalid X-Traveler-Id header")
++    record = db.query(Booking).filter(Booking.booking_id == booking_id).first()
++    if record is not None and record.user_id != traveler_id:
++        raise HTTPException(status_code=403, detail="Forbidden")
+     result = booking.cancel_booking(db, booking_id)
+     if isinstance(result, ErrorResponse):
+         status = 404 if result.error_code == "BOOKING_NOT_FOUND" else 409
+@@ -342,7 +358,7 @@ async def release_hold(hold_id: str):
+ # ==================== MCP SERVER (for AI agents) ====================
+ # Auto-generates MCP tools from all FastAPI routes above — no duplication needed.
+ 
+-mcp = FastApiMCP(app)
++mcp = FastApiMCP(app, headers=["authorization", "x-traveler-id"])
+ mcp.mount_http()
+ 
+ 
+diff --git a/booking_system_backend/tests/test_rest.py b/booking_system_backend/tests/test_rest.py
+index 6b5cd83..25813b8 100644
+--- a/booking_system_backend/tests/test_rest.py
++++ b/booking_system_backend/tests/test_rest.py
+@@ -353,7 +353,7 @@ class TestBookingsEndpoint:
+         ))
+         db_session.commit()
+ 
+-        response = client.get(f"/bookings/{user_id}")
++        response = client.get(f"/bookings/{user_id}", headers={"x-traveler-id": str(user_id)})
+         assert response.status_code == 200
+         data = response.json()
+         assert len(data) == 1
+@@ -361,7 +361,7 @@ class TestBookingsEndpoint:
+ 
+     def test_get_bookings_empty(self, client, db_session):
+         """Test getting bookings when user has none."""
+-        response = client.get("/bookings/999")
++        response = client.get("/bookings/999", headers={"x-traveler-id": "999"})
+         assert response.status_code == 200
+         assert response.json() == []
+ 
+@@ -400,14 +400,14 @@ class TestCancelEndpoint:
+         db_session.commit()
+         booking = db_session.query(Booking).first()
+ 
+-        response = client.post(f"/cancel/{booking.booking_id}")
++        response = client.post(f"/cancel/{booking.booking_id}", headers={"x-traveler-id": str(user_id)})
+         assert response.status_code == 200
+         data = response.json()
+         assert data["status"] == "cancelled"
+ 
+     def test_cancel_booking_not_found(self, client, db_session):
+         """Test cancelling non-existent booking."""
+-        response = client.post("/cancel/999")
++        response = client.post("/cancel/999", headers={"x-traveler-id": "1"})
+         assert response.status_code == 404
+         data = response.json()["detail"]
+         assert data["success"] == False
+@@ -922,3 +922,113 @@ class TestReviewsEndpoint:
+         response = client.get("/flights/9999/reviews")
+         assert response.status_code == 200
+         assert response.json() == []
++
++
++class TestOwnershipChecks:
++    """Test X-Traveler-Id ownership enforcement on /cancel and /bookings routes."""
++
++    # ------------------------------------------------------------------
++    # Helpers
++    # ------------------------------------------------------------------
++
++    def _make_booking(self, db_session, user_id):
++        """Insert a flight and a booking for user_id; return (flight, booking)."""
++        db_session.add(Flight(
++            origin="Earth",
++            destination="Mars",
++            departure_time="2099-01-01 09:00",
++            arrival_time="2099-01-01 17:00",
++            base_price=1000000,
++            economy_seats_available=5,
++            business_seats_available=3,
++            galaxium_seats_available=1,
++        ))
++        db_session.commit()
++        flt = db_session.query(Flight).first()
++        db_session.add(Booking(
++            user_id=user_id,
++            flight_id=flt.flight_id,
++            status="booked",
++            booking_time="2099-01-01 10:00",
++            seat_class="economy",
++            price_paid=1000000,
++        ))
++        db_session.commit()
++        bk = db_session.query(Booking).first()
++        return flt, bk
++
++    # ------------------------------------------------------------------
++    # cancel — ownership
++    # ------------------------------------------------------------------
++
++    def test_cancel_matching_header_succeeds(self, client, db_session, sample_user_data):
++        """POST /cancel/{booking_id} with matching X-Traveler-Id returns 200."""
++        user_response = client.post("/register", json=sample_user_data)
++        user_id = user_response.json()["user_id"]
++        _, bk = self._make_booking(db_session, user_id)
++
++        response = client.post(
++            f"/cancel/{bk.booking_id}",
++            headers={"x-traveler-id": str(user_id)},
++        )
++        assert response.status_code == 200
++        assert response.json()["status"] == "cancelled"
++
++    def test_cancel_mismatched_header_returns_403(self, client, db_session, sample_user_data):
++        """POST /cancel/{booking_id} with a different X-Traveler-Id returns 403."""
++        user_response = client.post("/register", json=sample_user_data)
++        user_id = user_response.json()["user_id"]
++        _, bk = self._make_booking(db_session, user_id)
++
++        other_id = user_id + 99
++        response = client.post(
++            f"/cancel/{bk.booking_id}",
++            headers={"x-traveler-id": str(other_id)},
++        )
++        assert response.status_code == 403
++
++    def test_cancel_missing_header_returns_403(self, client, db_session, sample_user_data):
++        """POST /cancel/{booking_id} without X-Traveler-Id header returns 403."""
++        user_response = client.post("/register", json=sample_user_data)
++        user_id = user_response.json()["user_id"]
++        _, bk = self._make_booking(db_session, user_id)
++
++        response = client.post(f"/cancel/{bk.booking_id}")
++        assert response.status_code == 403
++
++    # ------------------------------------------------------------------
++    # bookings — ownership
++    # ------------------------------------------------------------------
++
++    def test_bookings_mismatched_header_returns_403(self, client, db_session, sample_user_data):
++        """GET /bookings/{user_id} with a different X-Traveler-Id returns 403."""
++        user_response = client.post("/register", json=sample_user_data)
++        user_id = user_response.json()["user_id"]
++
++        other_id = user_id + 99
++        response = client.get(
++            f"/bookings/{user_id}",
++            headers={"x-traveler-id": str(other_id)},
++        )
++        assert response.status_code == 403
++
++    # ------------------------------------------------------------------
++    # MCP tool schema — no traveller argument exposed
++    # ------------------------------------------------------------------
++
++    def test_mcp_tools_have_no_traveler_id_argument(self, client, db_session):
++        """Neither the cancel nor the bookings MCP tool has a traveler_id input property."""
++        openapi = client.get("/openapi.json").json()
++        paths_of_interest = {
++            "/cancel/{booking_id}": "post",
++            "/bookings/{user_id}": "get",
++        }
++        for path, method in paths_of_interest.items():
++            params = openapi["paths"][path][method].get("parameters", [])
++            param_names = [p["name"].lower().replace("-", "_") for p in params]
++            assert "x_traveler_id" not in param_names, (
++                f"{method.upper()} {path} exposes x_traveler_id as a tool parameter"
++            )
++            assert "traveler_id" not in param_names, (
++                f"{method.upper()} {path} exposes traveler_id as a tool parameter"
++            )

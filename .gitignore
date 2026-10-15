@@ -10,3 +10,5 @@ config/cache/
 .pytest_cache/
 .DS_Store
 _env
+docs/b*-plan.md
+config/pairing.json

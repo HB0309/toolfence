@@ -25,7 +25,10 @@ Logic order inside ``execute``
       - Re-use the already-computed ``arguments_hash``.
       - Determine hold reason and ``untrusted_arg_name``.
       - Emit ``HeldCallEvent`` via ``on_held``.
-      - Return the hold sentinel without calling ``tool.execute``.
+      - If ``await_decision`` is ``None``: return the hold sentinel immediately.
+      - Otherwise: await ``await_decision(event)``.  If it returns ``True`` and
+        ``confirm_grant.consume_grant`` succeeds, call ``tool.execute`` and return
+        its result.  If either check fails, return the decline sentinel.
 3. Call ``tool.execute(**params)``; capture the string result.
 4. Determine the tool's ``trust_label`` from ``surface_map``
    (default ``"untrusted"`` if absent — fail-closed for unreviewed tools).
@@ -35,6 +38,15 @@ Logic order inside ``execute``
    to the result before returning.
 8. Return the (possibly datamarked) result.
 
+``await_decision`` contract
+----------------------------
+``await_decision`` is an optional async callable ``(HeldCallEvent) -> bool``.
+When provided (Track B's gateway launcher passes one in), the proxy awaits it
+instead of returning the hold sentinel immediately.  ``True`` means the user
+approved; the proxy then checks ``confirm_grant`` and, if it matches, executes
+the tool.  ``False`` (or a failed grant check) causes the proxy to return the
+decline sentinel instead of the hold sentinel.
+
 This module has zero nanobot imports and zero ``toolfence.engine`` imports.
 """
 
@@ -42,7 +54,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from toolfence.contracts.guard import HeldCallEvent
 from toolfence.contracts.surface import SurfaceFile
@@ -54,6 +66,8 @@ from toolfence.guard.taint import SessionTaint
 
 # Sentinel returned to the caller when a tool call is held for confirmation.
 _HOLD_SENTINEL = "paused — needs your confirmation"
+# Sentinel returned when await_decision was provided and the user declined.
+_DECLINE_SENTINEL = "Declined by the user. This action was not performed. Do not retry it."
 
 
 def _get_action_class(surface_map: SurfaceFile, tool_name: str) -> str:
@@ -107,6 +121,12 @@ class GuardedProxy:
         Callable invoked with a ``HeldCallEvent`` whenever a call is held.
         The caller (e.g. ``integration/channel_adapter.py``) uses this to send the
         hold card to the user.
+    await_decision:
+        Optional async callable ``(HeldCallEvent) -> bool``.  When ``None``
+        (default), the proxy returns the hold sentinel immediately after calling
+        ``on_held``.  When provided (Track B's gateway launcher), the proxy awaits
+        it; ``True`` + a matching ``confirm_grant`` causes the tool to execute;
+        otherwise the decline sentinel is returned.
     guard_on:
         When ``True`` (default), the four-branch card rule is enforced.
         When ``False``, every call passes through without being held.
@@ -127,6 +147,7 @@ class GuardedProxy:
         *,
         guard_on: bool = True,
         datamark_on: bool = False,
+        await_decision: Callable[[HeldCallEvent], Awaitable[bool]] | None = None,
     ) -> None:
         # Store under names that don't collide with forwarded attributes.
         object.__setattr__(self, "_tool", tool)
@@ -138,6 +159,7 @@ class GuardedProxy:
         object.__setattr__(self, "_confirm_grant", confirm_grant)
         object.__setattr__(self, "_guard_on", guard_on)
         object.__setattr__(self, "_datamark_on", datamark_on)
+        object.__setattr__(self, "_await_decision", await_decision)
 
     # ------------------------------------------------------------------
     # Explicit forwarding — same three properties as ProxyStub
@@ -232,7 +254,17 @@ class GuardedProxy:
                     untrusted_arg_name=untrusted_arg_name,
                 )
                 self._on_held(event)
-                return _HOLD_SENTINEL
+                if self._await_decision is None:
+                    return _HOLD_SENTINEL
+                # await_decision provided — ask the caller and check the grant.
+                approved: bool = await self._await_decision(event)
+                if approved and self._confirm_grant.consume_grant(
+                    tool_name, args_hash
+                ):
+                    # Grant matched — fall through to execute the tool.
+                    pass
+                else:
+                    return _DECLINE_SENTINEL
 
         # ----------------------------------------------------------------
         # Step 3 — Call the real tool

@@ -298,7 +298,7 @@ Decision rules (GRD-7):
 - Record user-typed values in `ProvenanceStore` with label `user`.
 - Check for a pending confirm grant (Allow/Decline button press).
 
-In `scripts/launch_nanobot.py` and `scripts/launch_gateway.py`, the launcher registers a `MessageBus` listener that calls `provenance_store.record_user_message(text)` and `confirm_grant.check_inbound(text)` before each turn. The Telegram "Allow" press re-enters the loop as a normal `InboundMessage` (confirmed in `nanobot-map.md §Open check 2`); the listener intercepts it exactly the same way as typed text.
+In `scripts/launch_gateway.py`, the launcher wraps `bus.publish_inbound` to call `provenance_store.record_user_message(msg.content)` for every typed inbound message. Button taps carry `metadata["is_callback"] = True` and are excluded from provenance recording. Grant detection is callback-only: `wrap_callback_query` in `toolfence/integration/channel_adapter.py` intercepts `TelegramChannel._on_callback_query` and calls `confirm_grant.store_pending(tool_name, arguments_hash)` when a matching Allow button is tapped.
 
 **HeldCallEvent** (emitted by `GuardedProxy` on a hold, consumed by `toolfence/integration/channel_adapter.py`):
 
@@ -501,7 +501,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### A-1 Surface scanner — engine
-**Track:** A · **Depends on:** S-2 · **Status:** [ ] pending
+**Track:** A · **Depends on:** S-2 · **Status:** [x] done
 
 **Intent:** Implement the surface scanner for all three source types; SHA-256 description hashing; action-class heuristics.
 
@@ -519,7 +519,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### A-2 Canary and probe builder — engine
-**Track:** A · **Depends on:** S-2 · **Status:** [ ] pending
+**Track:** A · **Depends on:** S-2 · **Status:** [x] done
 
 **Intent:** Canary generation, probe builder, and placeholder-template validator.
 
@@ -538,7 +538,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### A-3 Datamarking — guard
-**Track:** C · **Depends on:** S-2 · **Status:** [ ] pending
+**Track:** C · **Depends on:** S-2 · **Status:** [x] done
 
 **Intent:** Implement `datamark_result` in `guard/datamark.py` — the single place all datamarking goes through. `GuardedProxy` calls it when `datamark_on=True`; there is no separate engine-side copy.
 
@@ -555,7 +555,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### A-4 Verdict assignment and scoring — engine
-**Track:** A · **Depends on:** S-2, S-4 · **Status:** [ ] pending
+**Track:** A · **Depends on:** S-2, S-4 · **Status:** [x] done
 
 **Intent:** Deterministic verdict assignment; metric aggregation; report renderer with disclaimer.
 
@@ -574,7 +574,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### A-5 Evaluation runner — engine
-**Track:** A · **Depends on:** S-4, A-2, A-4 · **Status:** [ ] pending
+**Track:** A · **Depends on:** S-4, A-2, A-4 · **Status:** [x] done
 
 **Intent:** The evaluation runner that drives the full channel × defense matrix.
 
@@ -592,7 +592,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### C-1 Guard core — decision, provenance, taint
-**Track:** C · **Depends on:** S-2 · **Status:** [ ] pending
+**Track:** C · **Depends on:** S-2 · **Status:** [x] done
 
 **Intent:** The three stateless/stateful Guard logic pieces. Zero nanobot imports.
 
@@ -611,7 +611,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### C-2 GuardedProxy and HeldCallEvent — Guard
-**Track:** C · **Depends on:** C-1, A-3 · **Status:** [ ] pending
+**Track:** C · **Depends on:** C-1, A-3 · **Status:** [x] done
 
 **Intent:** `GuardedProxy` wraps **any** tool (not just `mcp_*`), with two boolean switches: `guard_on` enables the card rule and holds; `datamark_on` enables datamarking of untrusted results. This single proxy covers all six defense conditions and is used by the runner even when Guard is off.
 
@@ -629,7 +629,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### C-3 Guard confirm flow — Guard
-**Track:** C · **Depends on:** C-2 · **Status:** [ ] pending
+**Track:** C · **Depends on:** C-2 · **Status:** [x] done
 
 **Intent:** Confirm-grant mechanism: a user-sourced "Allow" press unlocks the exact held call for that turn only. A grant from a tool result is rejected.
 
@@ -647,7 +647,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-1a Galaxium reviews patch — targets
-**Track:** B · **Depends on:** B-2 (setup script so patches can be applied) · **Status:** [ ] pending
+**Track:** B · **Depends on:** B-2 (setup script so patches can be applied) · **Status:** [x] done
 
 **Intent:** Add the reviews route + seeded synthetic data to Galaxium as a committed patch file. This is the untrusted-content channel.
 
@@ -664,7 +664,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-1b Galaxium ownership patch — targets
-**Track:** B · **Depends on:** B-2 · **Status:** [ ] pending
+**Track:** B · **Depends on:** B-2 · **Status:** [x] done
 
 **Intent:** Add server-side ownership checks to the two vulnerable Galaxium routes. The traveller identity is bound server-side via a fixed `X-Traveler-Id` header set in nanobot's MCP config — not passed as a model-fillable argument.
 
@@ -682,7 +682,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-2 Setup script and nanobot config — targets
-**Track:** B · **Depends on:** S-1 · **Status:** [ ] pending
+**Track:** B · **Depends on:** S-1 · **Status:** [x] done
 
 **Intent:** Write the setup script that fetches both targets at their pinned commits and applies patches. Commit the eval and gateway nanobot configs. B-1a and B-1b depend on this because the patches are applied by the setup script.
 
@@ -701,7 +701,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-3 nanobot Guard wiring — integration
-**Track:** B · **Depends on:** S-2 (proxy stub), C-2 (real `GuardedProxy`; B-3 can start against the stub and upgrade when C-2 lands) · **Status:** [ ] pending
+**Track:** B · **Depends on:** S-2 (proxy stub), C-2 (real `GuardedProxy`; B-3 can start against the stub and upgrade when C-2 lands) · **Status:** [x] done
 
 **Intent:** Implement the post-load proxy installer in `integration/installer.py` and the two Guard-wired launcher scripts. The installer wraps **every** tool in the registry — not just `mcp_*` — so that `read_file` and other built-in tools are captured for file-label provenance. No nanobot source files are modified.
 
@@ -709,7 +709,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 
 **Files:**
 - `toolfence/integration/installer.py` — `install_guard(registry, surface_map, provenance, taint, decision, on_held, *, guard_on, datamark_on)`: iterates **all** `registry._tools` entries and wraps each with `GuardedProxy(guard_on=guard_on, datamark_on=datamark_on)`; `verify_guard_invariant(registry, required_names) -> None` (blocks turn on bare wrapper); reconnect callback re-runs install; calls `registry.unregister("spawn")` and `registry.unregister("exec")` if present. `guard_on` and `datamark_on` are set from the defense condition in the launcher or runner.
-- `scripts/launch_nanobot.py` — async launcher for direct/eval runs: loads config, connects MCP, calls `mcp_provider.connect()`, then `install_guard(...)` with `guard_on=True, datamark_on=False` (or as configured), registers `MessageBus` listener for user messages (feeds `provenance_store.record_user_message` and `confirm_grant.check_inbound`), then calls `agent_loop.process_direct(...)`. Built from `run_spike.py`'s `_run()` function.
+- `scripts/launch_nanobot.py` — async launcher for direct/eval runs: loads config, connects MCP, calls `mcp_provider.connect()`, then `install_guard(...)` with `guard_on=True, datamark_on=False` (or as configured), registers `MessageBus` listener for user messages (feeds `provenance_store.record_user_message`), then calls `agent_loop.process_direct(...)`. Built from `run_spike.py`'s `_run()` function.
 - `tests/test_installer.py` — stub registry with 3 MCP tools + 1 `read_file` tool → **all 4** replaced (GRD-2, "every tool"); reconnect → re-wrapped (GRD-3a); bare wrapper injected → per-turn check raises (GRD-3b); `spawn` and `exec` absent after install (GRD-13); `read_file` result recorded in provenance store (GRD-6)
 
 **Test:** `pytest tests/test_installer.py` green (5 test cases).
@@ -719,7 +719,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-4 NanobotAdapter — integration
-**Track:** B · **Depends on:** S-4, B-3 · **Status:** [ ] pending
+**Track:** B · **Depends on:** S-4, B-3 · **Status:** [x] done
 
 **Intent:** Build `NanobotAdapter` in `integration/nanobot_adapter.py` from `run_spike.py`'s `_run()` function. It returns a full `Trace` including status, final reply, usage with reasoning tokens, model, host, session key, and timestamp.
 
@@ -736,25 +736,25 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-4b Channel adapter — integration
-**Track:** B · **Depends on:** C-2 · **Status:** [ ] pending
+**Track:** B · **Depends on:** C-2 · **Status:** [x] done
 
 **Intent:** Implement the Telegram channel adapter that converts a `HeldCallEvent` into an `OutboundMessage` with buttons. Also implement `scripts/launch_gateway.py` for the live Telegram demo.
 
 **Req IDs:** GRD-10, PG-10
 
 **Files:**
-- `toolfence/integration/channel_adapter.py` — `held_event_to_outbound(event: HeldCallEvent) -> OutboundMessage`: calls `build_card_message`, sets `text` and `buttons=[["Allow","Decline"]]`
-- `scripts/launch_gateway.py` — Gateway launcher (for Telegram demo): same Guard wiring as `launch_nanobot.py` but starts `gateway_runtime` instead of `process_direct`; registers the same `MessageBus` user-message listener
-- `tests/test_integration.py` — channel adapter test: `HeldCallEvent` → `OutboundMessage` with correct text and buttons; user-message listener test: "Allow" message → `confirm_grant.check_inbound` called with source `"user"`
+- `toolfence/integration/channel_adapter.py` — `send_hold_card(event, send_message, chat_id, channel_name)`: builds hashed buttons `[["Allow #<hash8>", "Decline #<hash8>"]]` and sends `OutboundMessage`; `wrap_callback_query(original, confirm_grant, channel, get_pending, clear_pending)`: wraps `TelegramChannel._on_callback_query` and calls `confirm_grant.store_pending` only for an Allow tap whose `#hash8` suffix matches the currently-held event
+- `scripts/launch_gateway.py` — Minimal demo gateway launcher: constructs `bus`, `tools`, `mcp_provider`, `channels` directly; wraps `bus.publish_inbound` for provenance; wraps `_on_callback_query` before channels start; `on_held` is sync and uses `asyncio.get_running_loop().create_task(...)` to send the card
+- `tests/test_integration.py` — 8 unit tests; no nanobot required: correct hashed buttons, Allow/Decline/wrong-hash/no-pending/disallowed-sender paths, single call-site of `store_pending`, module-level import check
 
 **Test:** `pytest tests/test_integration.py` green.
 
-**Done when:** `OutboundMessage.buttons == [["Allow","Decline"]]`; "Allow" Telegram press re-enters loop as user message (confirmed by `nanobot-map.md §Open check 2`).
+**Done when:** Buttons carry `#hash8` suffix; wrong-hash tap stores nothing; Decline clears pending without storing a grant; disallowed sender stores nothing; exactly one `store_pending` call site in `integration/`; `pytest tests/test_integration.py` green.
 
 ---
 
 ### B-5 Baseline `surface.json` and narrowing config — targets
-**Track:** B · **Depends on:** A-1, B-1a, B-1b, B-2 · **Status:** [ ] pending
+**Track:** B · **Depends on:** A-1, B-1a, B-1b, B-2 · **Status:** [x] done
 
 **Intent:** Produce the committed baseline `surface.json` (all Galaxium tools including the internal route), verify tool names against the live MCP list, and confirm `enabled_tools` in `nanobot.eval.json` narrows correctly.
 
@@ -771,7 +771,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### C-4 CLI — scan, run, report
-**Track:** C · **Depends on:** A-1, A-4, A-5 · **Status:** [ ] pending
+**Track:** C · **Depends on:** A-1, A-4, A-5 · **Status:** [x] done
 
 **Intent:** Implement the three `toolfence` subcommands with correct exit codes and output format. No secrets in committed tree.
 
@@ -789,7 +789,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### C-5 CI checks — surface-diff and Guard-wiring
-**Track:** C · **Depends on:** A-1, B-3 · **Status:** [ ] pending
+**Track:** C · **Depends on:** A-1, B-3 · **Status:** [x] done
 
 **Intent:** Three CI checks as callable Python functions plus the GitHub Action. The Action also runs the full pytest suite with no model/network.
 
@@ -807,7 +807,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### C-6 Dashboard
-**Track:** C · **Depends on:** A-4, A-5 · **Status:** [ ] pending
+**Track:** C · **Depends on:** A-4, A-5 · **Status:** [x] done
 
 **Intent:** Read-only results dashboard: grid, trend, replay button. Playwright used for the E2E test (optional dev dep; test skips gracefully if Playwright is not installed).
 
@@ -825,7 +825,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-6a Bob MCP server — Bob integration
-**Track:** B · **Depends on:** A-1, A-4, A-5, C-2 · **Status:** [ ] pending
+**Track:** B · **Depends on:** A-1, A-4, A-5, C-2 · **Status:** [x] done
 
 **Intent:** Implement the ToolFence MCP server with exactly four tools, JSON I/O matching the shared contracts.
 
@@ -842,14 +842,14 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-6b Auditor mode and skill — Bob integration
-**Track:** B · **Depends on:** B-6a · **Status:** [ ] pending
+**Track:** B · **Depends on:** B-6a · **Status:** [x] done
 
 **Intent:** Auditor custom mode and ToolFence skill SKILL.md.
 
 **Req IDs:** BOB-1, BOB-7, BOB-8
 
 **Files:**
-- `.bob/modes/auditor.yaml` — read-only permission group; calls ToolFence MCP tools and reads files; cannot edit code or run state-changing shell commands
+- `.bob/custom_modes.yaml` — read-only permission group; calls ToolFence MCP tools and reads files; cannot edit code or run state-changing shell commands
 - `.bob/skills/toolfence/SKILL.md` — frontmatter: `name: toolfence`, `description: scan → fix → re-verify`; body describes the three-step workflow
 - `tests/test_bob.py` — extended: skill file passes Bob skill schema validation (BOB-8); mode permission group is read-only (BOB-1)
 
@@ -860,7 +860,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### A-6 Findings report — engine
-**Track:** A · **Depends on:** A-4, C-2 · **Status:** [ ] pending
+**Track:** A · **Depends on:** A-4, C-2 · **Status:** [x] done
 
 **Intent:** Machine-readable findings fixture (all 13 findings from PG-9) and the PG-8 scripted-adapter integration test.
 
@@ -878,7 +878,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### C-7 IBM Cloud deploy
-**Track:** C · **Depends on:** C-6 · **Status:** [ ] pending
+**Track:** C · **Depends on:** C-6 · **Status:** [x] done
 
 **Intent:** Documented, repeatable IBM Cloud Code Engine deploy. No API keys on the server.
 
@@ -959,8 +959,8 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 | Unit | Bare wrapper injection → per-turn check raises | `tests/test_installer.py` |
 | Unit | `spawn` and `exec` absent after install | `tests/test_installer.py` |
 | Unit | `read_file` result recorded in provenance store after proxy executes | `tests/test_installer.py` |
-| Unit | Channel adapter → `OutboundMessage` with correct text and buttons | `tests/test_integration.py` |
-| Unit | User-message listener → `confirm_grant.check_inbound` called with source `"user"` | `tests/test_integration.py` |
+| Unit | Channel adapter → `OutboundMessage` with hashed buttons `["Allow #<hash8>", "Decline #<hash8>"]` | `tests/test_integration.py` |
+| Unit | `wrap_callback_query`: wrong-hash tap stores nothing; Decline clears pending; disallowed sender stores nothing | `tests/test_integration.py` |
 | Contract | `NanobotAdapter` returns `Trace` with all required fields incl. `reasoning_tokens` | `tests/test_nanobot_adapter.py` |
 | Contract | `NanobotAdapter` + `ScriptedAdapter` both pass `adapter_contract` | `tests/test_nanobot_adapter.py` |
 | Patch | Galaxium tests pass after all patches; reviews endpoint returns seeded rows | `tests/test_galaxium_patches.py` |
