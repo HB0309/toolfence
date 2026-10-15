@@ -298,7 +298,7 @@ Decision rules (GRD-7):
 - Record user-typed values in `ProvenanceStore` with label `user`.
 - Check for a pending confirm grant (Allow/Decline button press).
 
-In `scripts/launch_nanobot.py` and `scripts/launch_gateway.py`, the launcher registers a `MessageBus` listener that calls `provenance_store.record_user_message(text)` and `confirm_grant.check_inbound(text)` before each turn. The Telegram "Allow" press re-enters the loop as a normal `InboundMessage` (confirmed in `nanobot-map.md §Open check 2`); the listener intercepts it exactly the same way as typed text.
+In `scripts/launch_gateway.py`, the launcher wraps `bus.publish_inbound` to call `provenance_store.record_user_message(msg.content)` for every typed inbound message. Button taps carry `metadata["is_callback"] = True` and are excluded from provenance recording. Grant detection is callback-only: `wrap_callback_query` in `toolfence/integration/channel_adapter.py` intercepts `TelegramChannel._on_callback_query` and calls `confirm_grant.store_pending(tool_name, arguments_hash)` when a matching Allow button is tapped.
 
 **HeldCallEvent** (emitted by `GuardedProxy` on a hold, consumed by `toolfence/integration/channel_adapter.py`):
 
@@ -709,7 +709,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 
 **Files:**
 - `toolfence/integration/installer.py` — `install_guard(registry, surface_map, provenance, taint, decision, on_held, *, guard_on, datamark_on)`: iterates **all** `registry._tools` entries and wraps each with `GuardedProxy(guard_on=guard_on, datamark_on=datamark_on)`; `verify_guard_invariant(registry, required_names) -> None` (blocks turn on bare wrapper); reconnect callback re-runs install; calls `registry.unregister("spawn")` and `registry.unregister("exec")` if present. `guard_on` and `datamark_on` are set from the defense condition in the launcher or runner.
-- `scripts/launch_nanobot.py` — async launcher for direct/eval runs: loads config, connects MCP, calls `mcp_provider.connect()`, then `install_guard(...)` with `guard_on=True, datamark_on=False` (or as configured), registers `MessageBus` listener for user messages (feeds `provenance_store.record_user_message` and `confirm_grant.check_inbound`), then calls `agent_loop.process_direct(...)`. Built from `run_spike.py`'s `_run()` function.
+- `scripts/launch_nanobot.py` — async launcher for direct/eval runs: loads config, connects MCP, calls `mcp_provider.connect()`, then `install_guard(...)` with `guard_on=True, datamark_on=False` (or as configured), registers `MessageBus` listener for user messages (feeds `provenance_store.record_user_message`), then calls `agent_loop.process_direct(...)`. Built from `run_spike.py`'s `_run()` function.
 - `tests/test_installer.py` — stub registry with 3 MCP tools + 1 `read_file` tool → **all 4** replaced (GRD-2, "every tool"); reconnect → re-wrapped (GRD-3a); bare wrapper injected → per-turn check raises (GRD-3b); `spawn` and `exec` absent after install (GRD-13); `read_file` result recorded in provenance store (GRD-6)
 
 **Test:** `pytest tests/test_installer.py` green (5 test cases).
@@ -743,13 +743,13 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 **Req IDs:** GRD-10, PG-10
 
 **Files:**
-- `toolfence/integration/channel_adapter.py` — `held_event_to_outbound(event: HeldCallEvent) -> OutboundMessage`: calls `build_card_message`, sets `text` and `buttons=[["Allow","Decline"]]`
-- `scripts/launch_gateway.py` — Gateway launcher (for Telegram demo): same Guard wiring as `launch_nanobot.py` but starts `gateway_runtime` instead of `process_direct`; registers the same `MessageBus` user-message listener
-- `tests/test_integration.py` — channel adapter test: `HeldCallEvent` → `OutboundMessage` with correct text and buttons; user-message listener test: "Allow" message → `confirm_grant.check_inbound` called with source `"user"`
+- `toolfence/integration/channel_adapter.py` — `send_hold_card(event, send_message, chat_id, channel_name)`: builds hashed buttons `[["Allow #<hash8>", "Decline #<hash8>"]]` and sends `OutboundMessage`; `wrap_callback_query(original, confirm_grant, channel, get_pending, clear_pending)`: wraps `TelegramChannel._on_callback_query` and calls `confirm_grant.store_pending` only for an Allow tap whose `#hash8` suffix matches the currently-held event
+- `scripts/launch_gateway.py` — Minimal demo gateway launcher: constructs `bus`, `tools`, `mcp_provider`, `channels` directly; wraps `bus.publish_inbound` for provenance; wraps `_on_callback_query` before channels start; `on_held` is sync and uses `asyncio.get_running_loop().create_task(...)` to send the card
+- `tests/test_integration.py` — 8 unit tests; no nanobot required: correct hashed buttons, Allow/Decline/wrong-hash/no-pending/disallowed-sender paths, single call-site of `store_pending`, module-level import check
 
 **Test:** `pytest tests/test_integration.py` green.
 
-**Done when:** `OutboundMessage.buttons == [["Allow","Decline"]]`; "Allow" Telegram press re-enters loop as user message (confirmed by `nanobot-map.md §Open check 2`).
+**Done when:** Buttons carry `#hash8` suffix; wrong-hash tap stores nothing; Decline clears pending without storing a grant; disallowed sender stores nothing; exactly one `store_pending` call site in `integration/`; `pytest tests/test_integration.py` green.
 
 ---
 
@@ -959,8 +959,8 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 | Unit | Bare wrapper injection → per-turn check raises | `tests/test_installer.py` |
 | Unit | `spawn` and `exec` absent after install | `tests/test_installer.py` |
 | Unit | `read_file` result recorded in provenance store after proxy executes | `tests/test_installer.py` |
-| Unit | Channel adapter → `OutboundMessage` with correct text and buttons | `tests/test_integration.py` |
-| Unit | User-message listener → `confirm_grant.check_inbound` called with source `"user"` | `tests/test_integration.py` |
+| Unit | Channel adapter → `OutboundMessage` with hashed buttons `["Allow #<hash8>", "Decline #<hash8>"]` | `tests/test_integration.py` |
+| Unit | `wrap_callback_query`: wrong-hash tap stores nothing; Decline clears pending; disallowed sender stores nothing | `tests/test_integration.py` |
 | Contract | `NanobotAdapter` returns `Trace` with all required fields incl. `reasoning_tokens` | `tests/test_nanobot_adapter.py` |
 | Contract | `NanobotAdapter` + `ScriptedAdapter` both pass `adapter_contract` | `tests/test_nanobot_adapter.py` |
 | Patch | Galaxium tests pass after all patches; reviews endpoint returns seeded rows | `tests/test_galaxium_patches.py` |

@@ -1,0 +1,51 @@
+diff --git a/booking_system_frontend/src/pages/MyBookings.tsx b/booking_system_frontend/src/pages/MyBookings.tsx
+index cfdb94f..2022115 100644
+--- a/booking_system_frontend/src/pages/MyBookings.tsx
++++ b/booking_system_frontend/src/pages/MyBookings.tsx
+@@ -95,13 +95,13 @@ export const MyBookings = () => {
+   };
+ 
+   const handleConfirmCancel = async () => {
+-    if (!bookingToCancel) return;
++    if (!bookingToCancel || !user) return;
+ 
+     setCancellingId(bookingToCancel);
+     setShowCancelModal(false);
+ 
+     try {
+-      const result = await cancelBooking(bookingToCancel);
++      const result = await cancelBooking(bookingToCancel, user.user_id);
+ 
+       if (isErrorResponse(result)) {
+         toast.error(result.details || result.error);
+diff --git a/booking_system_frontend/src/services/api.ts b/booking_system_frontend/src/services/api.ts
+index d5e163a..bf1eac2 100644
+--- a/booking_system_frontend/src/services/api.ts
++++ b/booking_system_frontend/src/services/api.ts
+@@ -130,7 +130,9 @@ export const bookFlight = async (
+  * Get all bookings for a user
+  */
+ export const getUserBookings = async (userId: number): Promise<Booking[]> => {
+-  const response = await api.get<Booking[]>(`/bookings/${userId}`);
++  const response = await api.get<Booking[]>(`/bookings/${userId}`, {
++    headers: { 'X-Traveler-Id': String(userId) },
++  });
+   return response.data;
+ };
+ 
+@@ -138,10 +140,13 @@ export const getUserBookings = async (userId: number): Promise<Booking[]> => {
+  * Cancel a booking
+  */
+ export const cancelBooking = async (
+-  bookingId: number
++  bookingId: number,
++  userId: number
+ ): Promise<Booking | ErrorResponse> => {
+   const response = await api.post<Booking | ErrorResponse>(
+-    `/cancel/${bookingId}`
++    `/cancel/${bookingId}`,
++    undefined,
++    { headers: { 'X-Traveler-Id': String(userId) } }
+   );
+   return response.data;
+ };
