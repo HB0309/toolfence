@@ -555,3 +555,97 @@ def test_runner_factory_tool_result_gets_task_prompt() -> None:
             assert "Reference token:" in prompt, (
                 f"user-input trial prompt missing canary text: {prompt!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# P1-1 — adapter_factory used in run_normal
+# ---------------------------------------------------------------------------
+
+def test_runner_factory_used_in_run_normal() -> None:
+    """run_normal calls adapter_factory once per (probe × defense) when set.
+
+    With 1 normal probe × 6 defenses, the factory should be called exactly 6
+    times, each time with channel='normal' and a non-empty prompt.
+    When adapter_factory is None, the factory must NOT be called.
+    """
+    calls: list[tuple[DefenseConfig, str, str]] = []
+
+    def spy_factory(defense: DefenseConfig, channel: str, probe_text: str) -> ScriptedAdapter:
+        calls.append((defense, channel, probe_text))
+        return ScriptedAdapter(_FIX_NORMAL)
+
+    attack_probes = [
+        (_load_probe(_PROBE_USER_INPUT), ScriptedAdapter(_FIX_USER_INPUT)),
+        (_load_probe(_PROBE_TOOL_RESULT), ScriptedAdapter(_FIX_TOOL_RESULT)),
+    ]
+    normal_probes = [(_NORMAL_PROBE_DICT, ScriptedAdapter(_FIX_NORMAL))]
+
+    runner = EvaluationRunner(
+        attack_probes=attack_probes,
+        normal_probes=normal_probes,
+        defenses=DEFAULT_DEFENSES,
+        surface_map=_load_surface(),
+        adapter_factory=spy_factory,
+    )
+    runner.run_normal(run_id="r-normal-factory-test")
+
+    assert len(calls) == 6, f"Expected 6 factory calls for normal trials, got {len(calls)}"
+    for defense, channel, probe_text in calls:
+        assert channel == "normal", f"Expected channel='normal', got {channel!r}"
+        assert isinstance(defense, DefenseConfig)
+        assert probe_text, "probe_text must be non-empty"
+
+    # Without factory, the tuple adapter is used directly (no calls).
+    calls.clear()
+    runner_no_factory = EvaluationRunner(
+        attack_probes=attack_probes,
+        normal_probes=normal_probes,
+        defenses=DEFAULT_DEFENSES,
+        surface_map=_load_surface(),
+    )
+    runner_no_factory.run_normal(run_id="r-normal-nofactory-test")
+    assert len(calls) == 0, "Factory must not be called when adapter_factory is None"
+
+
+# ---------------------------------------------------------------------------
+# P1-2 — cards_shown counted from trace
+# ---------------------------------------------------------------------------
+
+def test_runner_cards_shown_counts_held_calls() -> None:
+    """cards_shown equals the number of tool calls with guard_decision='hold'.
+
+    Build a trace fixture with two held calls by patching the scripted adapter's
+    trace in-place, then verify the resulting TrialRecord has cards_shown=2.
+    """
+    import copy
+    from toolfence.contracts.trace import Trace
+
+    # Load the normal fixture trace and inject two 'hold' decisions.
+    raw_trace = ScriptedAdapter(_FIX_NORMAL).run_turn("dummy", "none")
+    patched = raw_trace.model_copy(deep=True)
+    if len(patched.tool_calls) >= 2:
+        patched.tool_calls[0] = patched.tool_calls[0].model_copy(
+            update={"guard_decision": "hold"}
+        )
+        patched.tool_calls[1] = patched.tool_calls[1].model_copy(
+            update={"guard_decision": "hold"}
+        )
+    else:
+        pytest.skip("Normal fixture has fewer than 2 tool calls; cannot patch 2 holds")
+
+    class _FixedTrace:
+        def run_turn(self, prompt: str, defense: str) -> Trace:  # noqa: ARG002
+            return patched.model_copy(deep=True)
+
+    normal_probes = [(_NORMAL_PROBE_DICT, _FixedTrace())]
+    runner = EvaluationRunner(
+        attack_probes=[],
+        normal_probes=normal_probes,
+        defenses=[DEFAULT_DEFENSES[0]],  # one defense row is enough
+        surface_map=_load_surface(),
+    )
+    records = runner.run_normal(run_id="r-cards-shown-test")
+    assert len(records) == 1
+    assert records[0].cards_shown == 2, (
+        f"Expected cards_shown=2, got {records[0].cards_shown}"
+    )

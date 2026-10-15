@@ -287,3 +287,188 @@ def test_no_api_key_in_tree() -> None:
         "API key value found in committed source tree (outside .env.example):\n"
         + "\n".join(violations)
     )
+
+
+# ---------------------------------------------------------------------------
+# P1-3/P1-6 — new flags: --probe, --defense, --guard, --live
+# ---------------------------------------------------------------------------
+
+def test_run_probe_filter_attack_only(tmp_path: Path) -> None:
+    """--probe <id> restricts to that probe's attack trials and skips normal trials.
+
+    cancel-user-input-001 × 6 defenses = 6 attack records; 0 normal records.
+    """
+    result = _run_cli(
+        "run",
+        "--surface", str(_SURFACE_FIXTURE),
+        "--probe", "cancel-user-input-001",
+        "--output", str(tmp_path),
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    json_files = list(tmp_path.glob("*.json"))
+    assert len(json_files) == 6, (
+        f"Expected 6 records (1 probe × 6 defenses), got {len(json_files)}"
+    )
+
+    from toolfence.contracts.trial import TrialRecord
+    for jf in json_files:
+        rec = TrialRecord.model_validate(json.loads(jf.read_text()))
+        assert rec.kind == "attack", f"Expected kind=attack, got {rec.kind}"
+        assert rec.probe_id == "cancel-user-input-001", (
+            f"Unexpected probe_id: {rec.probe_id}"
+        )
+
+
+def test_run_probe_normal_skips_attack(tmp_path: Path) -> None:
+    """--probe normal skips all attack trials and runs only normal trials."""
+    result = _run_cli(
+        "run",
+        "--surface", str(_SURFACE_FIXTURE),
+        "--probe", "normal",
+        "--output", str(tmp_path),
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    json_files = list(tmp_path.glob("*.json"))
+    assert len(json_files) == 6, (
+        f"Expected 6 normal records (1 normal probe × 6 defenses), got {len(json_files)}"
+    )
+
+    from toolfence.contracts.trial import TrialRecord
+    for jf in json_files:
+        rec = TrialRecord.model_validate(json.loads(jf.read_text()))
+        assert rec.kind == "normal", f"Expected kind=normal, got {rec.kind}"
+
+
+def test_run_defense_filter(tmp_path: Path) -> None:
+    """--defense none restricts to the 2 defense rows named 'none' (guard on + off).
+
+    2 attack probes × 2 rows + 1 normal probe × 2 rows = 6 records.
+    """
+    result = _run_cli(
+        "run",
+        "--surface", str(_SURFACE_FIXTURE),
+        "--defense", "none",
+        "--output", str(tmp_path),
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    json_files = list(tmp_path.glob("*.json"))
+    assert len(json_files) == 6, (
+        f"Expected 6 records (3 trials × 2 defense rows), got {len(json_files)}"
+    )
+
+    from toolfence.contracts.trial import TrialRecord
+    for jf in json_files:
+        rec = TrialRecord.model_validate(json.loads(jf.read_text()))
+        assert rec.defense == "none", f"Unexpected defense: {rec.defense}"
+
+
+def test_run_guard_filter_off(tmp_path: Path) -> None:
+    """--guard off restricts to guard_on=False rows (3 rows out of 6 defenses).
+
+    2 attack probes × 3 rows + 1 normal probe × 3 rows = 9 records.
+    """
+    result = _run_cli(
+        "run",
+        "--surface", str(_SURFACE_FIXTURE),
+        "--guard", "off",
+        "--output", str(tmp_path),
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    json_files = list(tmp_path.glob("*.json"))
+    assert len(json_files) == 9, (
+        f"Expected 9 records (3 probes × 3 guard-off rows), got {len(json_files)}"
+    )
+
+    from toolfence.contracts.trial import TrialRecord
+    for jf in json_files:
+        rec = TrialRecord.model_validate(json.loads(jf.read_text()))
+        assert rec.guard_on is False, f"Expected guard_on=False, got {rec.guard_on}"
+
+
+def test_run_smoke_is_one_trial(tmp_path: Path) -> None:
+    """--probe cancel-user-input-001 --defense none --guard off = exactly 1 trial."""
+    result = _run_cli(
+        "run",
+        "--surface", str(_SURFACE_FIXTURE),
+        "--probe", "cancel-user-input-001",
+        "--defense", "none",
+        "--guard", "off",
+        "--output", str(tmp_path),
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    json_files = list(tmp_path.glob("*.json"))
+    assert len(json_files) == 1, (
+        f"Smoke command must produce exactly 1 trial record, got {len(json_files)}"
+    )
+
+    from toolfence.contracts.trial import TrialRecord
+    rec = TrialRecord.model_validate(json.loads(json_files[0].read_text()))
+    assert rec.kind == "attack"
+    assert rec.defense == "none"
+    assert rec.guard_on is False
+
+
+def test_run_zero_trials_exits_zero_with_warning(tmp_path: Path) -> None:
+    """Filters that produce zero trials exit 0 with a warning on stderr."""
+    result = _run_cli(
+        "run",
+        "--surface", str(_SURFACE_FIXTURE),
+        "--probe", "nonexistent-probe-id",
+        "--output", str(tmp_path),
+    )
+    assert result.returncode == 0, (
+        f"Expected exit 0 for empty matrix, got {result.returncode}"
+    )
+    assert "zero" in result.stderr.lower() or "nothing" in result.stderr.lower() or "warning" in result.stderr.lower(), (
+        f"Expected a warning on stderr, got: {result.stderr!r}"
+    )
+
+
+def test_run_live_requires_api_key(tmp_path: Path) -> None:
+    """--live without OPENROUTER_API_KEY must exit non-zero before any model calls."""
+    import os
+    import subprocess
+
+    env = os.environ.copy()
+    env.pop("OPENROUTER_API_KEY", None)  # ensure key is absent
+    env["PYTHONIOENCODING"] = "utf-8"
+
+    result = subprocess.run(
+        [sys.executable, "-m", "toolfence",
+         "run", "--surface", str(_SURFACE_FIXTURE),
+         "--live", "--output", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=15,
+        cwd=str(_REPO_ROOT),
+        env=env,
+    )
+    assert result.returncode != 0, (
+        "Expected non-zero exit when --live used without API key"
+    )
+    assert "OPENROUTER_API_KEY" in result.stderr, (
+        f"Expected error mentioning OPENROUTER_API_KEY.\nstderr: {result.stderr}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# P1-4 — nanobot.eval.full.json uses enabledTools: ["*"]
+# ---------------------------------------------------------------------------
+
+def test_full_config_enabled_tools_is_wildcard() -> None:
+    """config/nanobot.eval.full.json must have enabledTools == ['*']."""
+    full_config_path = _REPO_ROOT / "config" / "nanobot.eval.full.json"
+    assert full_config_path.exists(), (
+        f"config/nanobot.eval.full.json not found at {full_config_path}"
+    )
+    data = json.loads(full_config_path.read_text(encoding="utf-8"))
+    enabled = data["tools"]["mcpServers"]["galaxium"]["enabledTools"]
+    assert enabled == ["*"], (
+        f"Expected enabledTools==[\"*\"], got {enabled!r}"
+    )
