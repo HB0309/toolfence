@@ -825,7 +825,7 @@ Tasks are grouped: shared base (S-), then engine (A-), Guard (C-), targets+Bob (
 ---
 
 ### B-6a Bob MCP server — Bob integration
-**Track:** B · **Depends on:** A-1, A-4, A-5, C-2 · **Status:** [ ] pending
+**Track:** B · **Depends on:** A-1, A-4, A-5, C-2 · **Status:** [x] done
 
 **Intent:** Implement the ToolFence MCP server with exactly four tools, JSON I/O matching the shared contracts.
 
