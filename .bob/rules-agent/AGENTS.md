@@ -25,17 +25,16 @@ Track B (`integration/installer.py`) wraps tools from nanobot's registry. It exp
 
 The `ProxyStub` in `contracts/guard.py` is the reference shape. `GuardedProxy` must be a drop-in replacement.
 
-## Confirm grant source checking (C-3)
+## Confirm grant flow (C-3)
 
-`ConfirmGrant.consume_grant` must check `source == "user"`. A grant that arrives as a tool result (`source == "first-party"` or `"untrusted"`) must be **rejected**.
+`ConfirmGrant.consume_grant(tool_name, args_hash)` takes **no `source` parameter**. There is no `__source__` kwarg; `GuardedProxy.execute` does not pop any source key from params.
 
-Grant detection is **button-click based, not button-label based.** Track B's launcher detects the native click callback (Telegram `_on_callback_query`) and calls `confirm_grant.store_pending(tool_name, args_hash)` directly. `ConfirmGrant` has zero knowledge of "Allow" / "Decline" strings.
+Approval comes exclusively from a Telegram inline-keyboard button tap:
+1. `wrap_callback_query` (in `toolfence/integration/channel_adapter.py`) intercepts `TelegramChannel._on_callback_query` and calls `DecisionGate.resolve(True)` on a matching Allow tap.
+2. `DecisionGate.await_decision` waits up to 120 s for that resolution; when `True` it calls `confirm_grant.store_pending(tool_name, args_hash)` — **this is the only `store_pending` call site in `toolfence/integration/`**.
+3. `GuardedProxy.execute` awaits `await_decision` (passed in at construction time from the gateway launcher) and then calls `confirm_grant.consume_grant` to complete the grant.
 
-The `source` kwarg in `GuardedProxy.execute` is extracted from `**params` using the key `"__source__"` (double-underscore prefix) to avoid collision with real tool parameters:
-```python
-source = params.pop("__source__", "first-party")
-```
-Track B passes `"__source__": "user"` in the kwargs when the trigger is a button-click callback.
+`ConfirmGrant` has zero knowledge of button labels or "Allow"/"Decline" strings.
 
 ## nanobot reconnect re-wrap (GRD-3)
 

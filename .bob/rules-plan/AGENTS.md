@@ -16,7 +16,6 @@ Any change that adds a nanobot import to `guard/` violates the architecture. Any
 
 ## Pending Track A tasks that Track C depends on
 
-- **A-5 (EvaluationRunner)** — `toolfence/engine/runner.py` does not yet exist. C-4 CLI needs it for `toolfence run`. Plan C-4 to start after A-5 lands, or stub the dependency.
 - **A-6 (findings report extension)** — extends `engine/report.py` and adds `fixtures/findings.json`. C-4 CLI calls `render_report`; this is safe to implement before A-6 since A-6 only extends the existing report, it does not change the interface.
 
 ## Pending Track B tasks that affect Track C

@@ -64,10 +64,11 @@ def render_report(summary: ResultSummary) -> str:
     nt = summary.normal_tasks
     lines.append("| Metric | Count | % |")
     lines.append("|--------|------:|--:|")
-    lines.append(f"| Success | {nt.success} | {nt.success_pct}% |")
-    lines.append(f"| Failed  | {nt.failed} | — |")
-    lines.append(f"| Skipped | {nt.skipped} | — |")
-    lines.append(f"| **Total** | **{nt.total}** | — |")
+    lines.append(f"| Success      | {nt.success} | {nt.success_pct}% |")
+    lines.append(f"| Failed       | {nt.failed} | — |")
+    lines.append(f"| Undetermined | {nt.undetermined} | — |")
+    lines.append(f"| Skipped      | {nt.skipped} | — |")
+    lines.append(f"| **Total**    | **{nt.total}** | — |")
     lines.append("")
 
     # ------------------------------------------------------------------
@@ -76,13 +77,13 @@ def render_report(summary: ResultSummary) -> str:
     if summary.normal_conditions:
         lines.append("### Normal-Task Results by Condition")
         lines.append("")
-        lines.append("| Defense | Guard | Success | Failed | Skipped | Total | Success% |")
-        lines.append("|---------|-------|--------:|-------:|--------:|------:|---------:|")
+        lines.append("| Defense | Guard | Success | Failed | Undetermined | Skipped | Total | Success% |")
+        lines.append("|---------|-------|--------:|-------:|-------------:|--------:|------:|---------:|")
         for nc in summary.normal_conditions:
             guard_label = "✓" if nc.guard_on else "✗"
             lines.append(
                 f"| {nc.defense} | {guard_label} | "
-                f"{nc.success} | {nc.failed} | {nc.skipped} | {nc.total} | {nc.success_pct}% |"
+                f"{nc.success} | {nc.failed} | {nc.undetermined} | {nc.skipped} | {nc.total} | {nc.success_pct}% |"
             )
         lines.append("")
 

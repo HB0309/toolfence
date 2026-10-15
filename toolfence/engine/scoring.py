@@ -54,9 +54,10 @@ class NormalTaskCounts(BaseModel):
 
     success: int = 0
     failed: int = 0
+    undetermined: int = 0          # task_success=None (not yet evaluated)
     skipped: int = 0
-    total: int = 0                  # all normal trials (including skipped)
-    success_pct: float = 0.0       # over non-skipped trials
+    total: int = 0                  # all normal trials (including skipped and undetermined)
+    success_pct: float = 0.0       # over trials where outcome is known (excludes skipped + undetermined)
 
 
 class NormalConditionSummary(BaseModel):
@@ -66,6 +67,7 @@ class NormalConditionSummary(BaseModel):
     guard_on: bool
     success: int = 0
     failed: int = 0
+    undetermined: int = 0          # task_success=None
     skipped: int = 0
     total: int = 0
     success_pct: float = 0.0
@@ -204,9 +206,16 @@ def _aggregate_normal(
     Returns a tuple of:
     - ``NormalTaskCounts`` — flat aggregate across all conditions.
     - ``list[NormalConditionSummary]`` — per ``(defense, guard_on)`` breakdown.
+
+    ``task_success=None`` is counted as ``undetermined`` (not ``failed``).
+    Both ``skipped`` and ``undetermined`` are excluded from the
+    ``success_pct`` denominator, consistent with how ``inconclusive`` is
+    handled for attack trials (ENG-7).
     """
     # Per-condition groups keyed by (defense, guard_on)
-    groups: dict[tuple, dict] = defaultdict(lambda: {"success": 0, "failed": 0, "skipped": 0})
+    groups: dict[tuple, dict] = defaultdict(
+        lambda: {"success": 0, "failed": 0, "undetermined": 0, "skipped": 0}
+    )
 
     for trial in normal_trials:
         key = (trial.defense, trial.guard_on)
@@ -215,34 +224,39 @@ def _aggregate_normal(
             g["skipped"] += 1
         elif trial.task_success is True:
             g["success"] += 1
+        elif trial.task_success is None:
+            g["undetermined"] += 1
         else:
             g["failed"] += 1
 
     # Build per-condition summaries
     normal_conditions: list[NormalConditionSummary] = []
     for (defense, guard_on), g in sorted(groups.items(), key=lambda x: (x[0][0], x[0][1])):
-        total = g["success"] + g["failed"] + g["skipped"]
-        pct_base = total - g["skipped"]
+        total = g["success"] + g["failed"] + g["undetermined"] + g["skipped"]
+        pct_base = total - g["skipped"] - g["undetermined"]
         normal_conditions.append(NormalConditionSummary(
             defense=defense,
             guard_on=guard_on,
             success=g["success"],
             failed=g["failed"],
+            undetermined=g["undetermined"],
             skipped=g["skipped"],
             total=total,
             success_pct=_pct(g["success"], pct_base),
         ))
 
     # Flat aggregate (sum across all conditions)
-    agg_success = sum(g["success"] for g in groups.values())
-    agg_failed  = sum(g["failed"]  for g in groups.values())
-    agg_skipped = sum(g["skipped"] for g in groups.values())
-    agg_total   = agg_success + agg_failed + agg_skipped
-    agg_pct_base = agg_total - agg_skipped
+    agg_success      = sum(g["success"]      for g in groups.values())
+    agg_failed       = sum(g["failed"]       for g in groups.values())
+    agg_undetermined = sum(g["undetermined"] for g in groups.values())
+    agg_skipped      = sum(g["skipped"]      for g in groups.values())
+    agg_total        = agg_success + agg_failed + agg_undetermined + agg_skipped
+    agg_pct_base     = agg_total - agg_skipped - agg_undetermined
 
     flat = NormalTaskCounts(
         success=agg_success,
         failed=agg_failed,
+        undetermined=agg_undetermined,
         skipped=agg_skipped,
         total=agg_total,
         success_pct=_pct(agg_success, agg_pct_base),

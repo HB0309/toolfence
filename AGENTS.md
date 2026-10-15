@@ -60,7 +60,12 @@ pytest --skip-network
 - **A-1:** `SurfaceScanner` (scan_json/openapi/mcp), `suggest_action_class`, `get_action_class`, `check_description_drift`, `_sanitise_name`.
 - **A-2:** `generate_canary`, `ProbeBuilder`, `validate_probe_file`; probe templates in `toolfence/engine/probes/`; rule 6 (probe_id required) already added.
 - **A-3:** `datamark_result`/`is_datamarked` in `toolfence/guard/datamark.py` (Track A wrote this under `guard/`; Track C owns it from here).
-- **A-4:** `assign_verdict`, `canary_in_args` (public helper), `aggregate`, `render_report`, `ResultSummary` (with `timestamp` field and defense legend) — code is in the repo and functionally complete; Track A developer is resolving a test-suite bug. **Do not attempt to fix A-4 bugs — that is Track A's work.** Track C can read and depend on the logic but C-4/C-5/C-6 must wait for A-4 to be officially done and A-5 to ship.
+- **A-4:** `assign_verdict`, `canary_in_args` (public helper), `aggregate`, `render_report`, `ResultSummary` (with `timestamp` field and defense legend) — fully complete, all tests green.
+- **A-5:** `EvaluationRunner` in `toolfence/engine/runner.py` — drives the full channel × defense matrix (12 attack + 6 normal = 18 records); optional `adapter_factory` parameter applies to attack trials only (normal trials always use the adapter stored in the probe tuple).
+- **Normal-task success rule:** `evaluate_normal_trial` in `toolfence/engine/normal_success.py` — pure-Python, no LLM; four-condition pass rule (status ok, goal tool called, guard passed, no error).
+- **B-4b DecisionGate:** `DecisionGate` in `toolfence/integration/channel_adapter.py` — held calls wait for a Telegram inline-keyboard button tap (120 s timeout); `store_pending` is called only inside `DecisionGate.await_decision`; `GuardedProxy` awaits via `await_decision`.
+- **B-6 Bob MCP server:** `toolfence/bob/mcp_server.py` — four tools (`scan_surface`, `run_eval`, `propose_fix`, `render_report`) exposed to Bob over stdio.
+- **Auditor mode and skill:** `.bob/custom_modes.yaml` (slug `auditor`) and `.bob/skills/toolfence/SKILL.md` — read-only audit pipeline, cannot edit code or run shell commands.
 
 ## Non-obvious project-specific patterns
 
@@ -75,3 +80,5 @@ pytest --skip-network
 - **`targets/galaxium/` and `targets/nanobot/` are git-ignored** — fetched by `scripts/setup.ps1`; our changes to them live only as `.patch` files in `targets/galaxium-patches/`.
 - **nanobot config is JSON, not YAML**; model and provider are under `agents.defaults`, not `providers.openrouter` (the latter is ignored for model selection).
 - **nanobot WebUI silently drops `OutboundMessage.buttons`** — confirmed in nanobot-map. Use Telegram for the live Guard confirm card.
+- **Demo identity:** `config/nanobot.gateway.json` passes `X-Traveler-Id: "1"` — the gateway agent is traveller 1 (Alice).
+- **Demo irreversible action is `cancel_booking`:** `confirm_hold` is not in `enabledTools`; the only irreversible tool the agent can call is `mcp_galaxium_cancel_booking_endpoint_cancel_booking_id_post` (action_class `"irreversible"` in the surface fixture).
