@@ -96,8 +96,12 @@ class ProvenanceStore:
         # Maps normalised string form → provenance label.
         # "user" values are stored separately so priority resolution is explicit.
         self._user_values: set[str] = set()
+        # Full collapsed user message texts — used for multi-word substring lookup.
+        self._user_messages: list[str] = []
         # label can be "first-party" or "untrusted"
         self._tool_values: dict[str, ProvenanceLabel] = {}
+        # Full collapsed tool result texts with their labels — for multi-word substring lookup.
+        self._tool_texts: list[tuple[str, ProvenanceLabel]] = []
         # file path → provenance label (GRD-6)
         self._file_labels: dict[str, ProvenanceLabel] = {}
 
@@ -112,6 +116,10 @@ class ProvenanceStore:
         user-sourced value so that names/IDs the user typed are always resolved as
         ``"user"`` provenance (GRD-4 rule 1).
 
+        The full collapsed message is also stored so that multi-word sub-phrases
+        (e.g. ``"Harsh Bhaskar"`` extracted from ``"Book for Harsh Bhaskar"``)
+        can be matched via substring search when the exact token lookup misses.
+
         Parameters
         ----------
         text:
@@ -121,6 +129,8 @@ class ProvenanceStore:
         collapsed = " ".join(text.split())
         if collapsed:
             self._user_values.add(collapsed)
+            # Keep the full message for multi-word substring fallback.
+            self._user_messages.append(collapsed)
         for token in text.split():
             norm = " ".join(token.split())
             if norm:
@@ -160,6 +170,10 @@ class ProvenanceStore:
                     self._store_tool_value(str(int(float(norm))), label)
                 except (ValueError, TypeError):
                     pass
+        # Keep the full collapsed result text for multi-word substring fallback.
+        collapsed_result = " ".join(result.split())
+        if collapsed_result:
+            self._tool_texts.append((collapsed_result, label))
 
     def record_file_path(self, path: str, label: ProvenanceLabel) -> None:
         """Record a workspace file path with its trust label (GRD-6).
@@ -222,7 +236,23 @@ class ProvenanceStore:
         if str_value in self._file_labels:
             return self._file_labels[str_value]
 
-        # Priority 5 — fail-closed default.
+        # Priority 5 — multi-word substring fallback.
+        # If the queried value contains a space it may be a sub-phrase (e.g. a full
+        # name) that was never stored as an exact token.  Search the full stored
+        # message/result texts in priority order.
+        collapsed_value = " ".join(str(value).split())
+        if " " in collapsed_value:
+            for msg in self._user_messages:
+                if collapsed_value in msg:
+                    return "user"
+            for text, lbl in self._tool_texts:
+                if collapsed_value in text and lbl == "first-party":
+                    return "first-party"
+            for text, lbl in self._tool_texts:
+                if collapsed_value in text and lbl == "untrusted":
+                    return "untrusted"
+
+        # Priority 6 — fail-closed default.
         return "untrusted"
 
     def resolve_file_path(self, path: str) -> ProvenanceLabel | None:
