@@ -152,6 +152,11 @@
         "goal_tool": {
           "title": "Goal Tool",
           "type": "string"
+        },
+        "label": {
+          "default": "primary",
+          "title": "Label",
+          "type": "string"
         }
       },
       "required": [

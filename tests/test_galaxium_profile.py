@@ -51,6 +51,12 @@ def test_galaxium_goal_tool_matches_normal_success_constant():
     assert profile.normal_task.goal_tool == DEFAULT_GOAL_TOOL
 
 
+def test_galaxium_normal_task_label_is_book_hold():
+    """normal_task.label must be 'book_hold' for the Galaxium profile."""
+    profile = _load_galaxium_profile()
+    assert profile.normal_task.label == "book_hold"
+
+
 def test_galaxium_tool_result_task_prompt_matches_runner_constant():
     """tool_result_task_prompt must be identical to TOOL_RESULT_TASK_PROMPT in runner.py."""
     from toolfence.engine.runner import TOOL_RESULT_TASK_PROMPT

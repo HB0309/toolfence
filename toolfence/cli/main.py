@@ -78,6 +78,8 @@ def main() -> None:
     report_p = sub.add_parser("report", help="Render a markdown report from trial records.")
     report_p.add_argument("results_dir", nargs="?", default="results", metavar="DIR",
                           help="Directory containing trial record JSON files (default: results/).")
+    report_p.add_argument("--output", default=None, metavar="FILE",
+                          help="Write the report to this file (UTF-8) instead of printing to stdout.")
 
     # ci-check
     ci_p = sub.add_parser(
@@ -118,7 +120,7 @@ def main() -> None:
             guard_filter=args.guard,
         )
     elif args.command == "report":
-        _cmd_report(args.results_dir)
+        _cmd_report(args.results_dir, output_file=getattr(args, "output", None))
     elif args.command == "ci-check":
         _cmd_ci_check(args.surface, args.live)
     elif args.command == "serve":
@@ -343,7 +345,7 @@ def _cmd_run(
             {
                 "content": profile.normal_task.prompt,
                 "goal_tool": profile.normal_task.goal_tool,
-                "label": "write_only",
+                "label": profile.normal_task.label,
             },
             ScriptedAdapter(normal_fix_path),
         ))
@@ -479,8 +481,12 @@ def _cmd_run(
 # report
 # ---------------------------------------------------------------------------
 
-def _cmd_report(results_dir: str) -> None:
-    """Print a markdown report from all trial records in *results_dir*."""
+def _cmd_report(results_dir: str, *, output_file: str | None = None) -> None:
+    """Print a markdown report from all trial records in *results_dir*.
+
+    When *output_file* is given the report is written to that path as UTF-8
+    instead of being printed to stdout.
+    """
     from toolfence.contracts.trial import TrialRecord
     from toolfence.engine.report import render_report
     from toolfence.engine.scoring import aggregate
@@ -511,11 +517,15 @@ def _cmd_report(results_dir: str) -> None:
     run_id = records[0].run_id if records else results_dir
     summary = aggregate(records, run_id=run_id)
     report = render_report(summary)
-    # Write as UTF-8 bytes directly to avoid Windows cp1252 encode errors
-    # (the report contains ✓/✗ characters from render_report).
-    sys.stdout.buffer.write(report.encode("utf-8"))
-    sys.stdout.buffer.write(b"\n")
-    sys.stdout.buffer.flush()
+
+    if output_file is not None:
+        Path(output_file).write_text(report + "\n", encoding="utf-8")
+    else:
+        # Write as UTF-8 bytes directly to avoid Windows cp1252 encode errors
+        # (the report contains ✓/✗ characters from render_report).
+        sys.stdout.buffer.write(report.encode("utf-8"))
+        sys.stdout.buffer.write(b"\n")
+        sys.stdout.buffer.flush()
 
     sys.exit(0)
 

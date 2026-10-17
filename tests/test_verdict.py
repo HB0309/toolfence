@@ -732,3 +732,68 @@ def test_report_contains_probe_column() -> None:
     report = render_report(summary)
     assert "Probe" in report, "Probe column header missing from security table"
     assert "probe-X" in report, "probe_id value missing from security table row"
+
+
+def test_report_user_input_note_present() -> None:
+    """render_report includes a user-input note when at least one user-input condition exists."""
+    trials = [_make_trial(verdict="leaked", channel="user-input", probe_id="ui-001")]
+    summary = aggregate(trials, run_id="r-ui-note-001")
+    report = render_report(summary)
+    assert "Note (user-input probes)" in report, (
+        "Expected user-input note in report when user-input conditions are present"
+    )
+    assert "Guard doesn't block what the user asked for" in report
+
+
+def test_report_user_input_note_absent_for_tool_result_only() -> None:
+    """render_report does NOT include the user-input note when only tool-result conditions exist."""
+    trials = [_make_trial(verdict="held", channel="tool-result", probe_id="tr-001")]
+    summary = aggregate(trials, run_id="r-tr-note-001")
+    report = render_report(summary)
+    assert "Note (user-input probes)" not in report, (
+        "user-input note must not appear when no user-input conditions are present"
+    )
+
+
+# ===========================================================================
+# Report header — Model and Host fields
+# ===========================================================================
+
+def test_report_header_shows_model_and_host() -> None:
+    """render_report must include Model and Host lines in the header when present."""
+    trace = _make_trace()  # model="ibm-granite/granite-4.2-8b", host="DeepInfra"
+    trial = _make_trial(verdict="refused", trace=trace)
+    summary = aggregate([trial], run_id="r-header-001")
+
+    assert summary.model == "ibm-granite/granite-4.2-8b", (
+        f"aggregate() did not populate model from trace: {summary.model!r}"
+    )
+    assert summary.host == "DeepInfra", (
+        f"aggregate() did not populate host from trace: {summary.host!r}"
+    )
+
+    report = render_report(summary)
+    assert "ibm-granite/granite-4.2-8b" in report, (
+        "Model name missing from rendered report header"
+    )
+    assert "DeepInfra" in report, (
+        "Host string missing from rendered report header"
+    )
+
+
+def test_report_header_omits_model_host_when_empty() -> None:
+    """render_report must NOT emit Model/Host lines when summary fields are empty."""
+    from toolfence.engine.scoring import ResultSummary, NormalTaskCounts, DISCLAIMER
+
+    summary = ResultSummary(
+        run_id="r-empty-001",
+        conditions=[],
+        normal_tasks=NormalTaskCounts(),
+        total_trials=0,
+        disclaimer=DISCLAIMER,
+        model="",
+        host="",
+    )
+    report = render_report(summary)
+    assert "**Model:**" not in report, "Model line must not appear when model is empty"
+    assert "**Host:**" not in report, "Host line must not appear when host is empty"

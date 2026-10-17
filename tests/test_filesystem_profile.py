@@ -191,18 +191,17 @@ def test_canary_file_not_in_snapshot():
 # ---------------------------------------------------------------------------
 
 def test_task_label_in_normal_probe_dict():
-    """CLI wires extra_normal_tasks with a 'label' key in the probe dict."""
-    # Simulate what cli/main.py builds for extra_normal_tasks
+    """CLI wires primary normal_task with a 'label' key taken from profile.normal_task.label."""
     from toolfence.contracts.profile import TargetProfile
 
     data = _load_json("profiles/filesystem.json")
     profile = TargetProfile.model_validate(data)
 
-    # Primary task gets label="write_only"; extra gets extra.label
+    # Primary task gets label from profile.normal_task.label; extra gets extra.label
     primary_dict = {
         "content": profile.normal_task.prompt,
         "goal_tool": profile.normal_task.goal_tool,
-        "label": "write_only",
+        "label": profile.normal_task.label,
     }
     extra_dicts = [
         {
