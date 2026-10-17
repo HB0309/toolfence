@@ -683,3 +683,52 @@ def test_a4_verdict_scoring_report_pipeline() -> None:
 
     # cards_shown section present
     assert "card" in report.lower()
+
+
+# ===========================================================================
+# Phase B — probe_id in group key, canary_in_args_held, Probe column in report
+# ===========================================================================
+
+def test_aggregate_different_probe_ids_give_separate_conditions() -> None:
+    """Two attack trials with the same channel/defense/guard but different probe_id
+    must produce two separate ConditionSummary rows (Phase B grouping fix)."""
+    trials = [
+        _make_trial(verdict="leaked", channel="tool-result", probe_id="probe-A"),
+        _make_trial(verdict="refused", channel="tool-result", probe_id="probe-B"),
+    ]
+    summary = aggregate(trials, run_id="r-probe-split")
+
+    assert len(summary.conditions) == 2, (
+        f"Expected 2 conditions for 2 probe IDs, got {len(summary.conditions)}"
+    )
+    probe_ids = {c.probe_id for c in summary.conditions}
+    assert probe_ids == {"probe-A", "probe-B"}, (
+        f"Expected probe IDs {{'probe-A', 'probe-B'}}, got {probe_ids}"
+    )
+
+
+def test_aggregate_canary_in_args_held_counts_only_held_with_canary() -> None:
+    """canary_in_args_held counts only held trials where canary_in_args is True."""
+    trials = [
+        # held + canary_in_args → counted
+        _make_trial(verdict="held", canary_in_args=True, probe_id="p-001"),
+        # held + no canary_in_args → not counted
+        _make_trial(verdict="held", canary_in_args=False, probe_id="p-001"),
+        # leaked + canary_in_args → not counted (not held)
+        _make_trial(verdict="leaked", canary_in_args=True, probe_id="p-001"),
+    ]
+    summary = aggregate(trials, run_id="r-canary-held")
+
+    assert len(summary.conditions) == 1
+    assert summary.conditions[0].attack.canary_in_args_held == 1, (
+        f"Expected canary_in_args_held=1, got {summary.conditions[0].attack.canary_in_args_held}"
+    )
+
+
+def test_report_contains_probe_column() -> None:
+    """render_report security table must include a Probe column header."""
+    trials = [_make_trial(verdict="refused", probe_id="probe-X")]
+    summary = aggregate(trials, run_id="r-probe-col")
+    report = render_report(summary)
+    assert "Probe" in report, "Probe column header missing from security table"
+    assert "probe-X" in report, "probe_id value missing from security table row"

@@ -97,25 +97,26 @@ def render_report(summary: ResultSummary) -> str:
         lines.append("*No attack trials recorded.*")
     else:
         lines.append(
-            "| Channel | Defense | Guard | "
+            "| Channel | Probe | Defense | Guard | "
             "Leaked | Held | Refused | Inconclusive | Skipped | Total | "
-            "Leaked% | Held% | Refused% | Inconclusive% | Cards Shown |"
+            "Leaked% | Held% | Refused% | Inconclusive% | Cards Shown | Canary-in-args held |"
         )
         lines.append(
-            "|---------|---------|-------|"
+            "|---------|-------|---------|-------|"
             "-------:|-----:|--------:|-------------:|--------:|------:|"
-            "--------:|------:|---------:|-------------:|------------:|"
+            "--------:|------:|---------:|-------------:|------------:|--------------------:|"
         )
         for cond in summary.conditions:
             a = cond.attack
             guard_label = "✓" if cond.guard_on else "✗"
             channel_label = cond.channel or "—"
+            probe_label = cond.probe_id or "—"
             lines.append(
-                f"| {channel_label} | {cond.defense} | {guard_label} | "
+                f"| {channel_label} | {probe_label} | {cond.defense} | {guard_label} | "
                 f"{a.leaked} | {a.held} | {a.refused} | {a.inconclusive} | "
                 f"{a.skipped} | {a.total} | "
                 f"{a.leaked_pct}% | {a.held_pct}% | {a.refused_pct}% | "
-                f"{a.inconclusive_pct}% | {cond.cards_shown} |"
+                f"{a.inconclusive_pct}% | {cond.cards_shown} | {a.canary_in_args_held} |"
             )
 
     lines.append("")
@@ -131,9 +132,10 @@ def render_report(summary: ResultSummary) -> str:
         lines.append("")
         for cond in summary.conditions:
             channel_label = cond.channel or "—"
+            probe_label = cond.probe_id or "—"
             guard_label = "on" if cond.guard_on else "off"
             lines.append(
-                f"- {channel_label} / {cond.defense} / guard {guard_label}: "
+                f"- {channel_label} / {probe_label} / {cond.defense} / guard {guard_label}: "
                 f"{cond.cards_shown} card(s)"
             )
         lines.append("")

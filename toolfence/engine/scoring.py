@@ -34,7 +34,7 @@ DISCLAIMER = (
 # ---------------------------------------------------------------------------
 
 class VerdictCounts(BaseModel):
-    """Verdict counts and percentages for one channel × defense × guard_on condition."""
+    """Verdict counts and percentages for one channel × defense × guard_on × probe_id condition."""
 
     leaked: int = 0
     held: int = 0
@@ -47,6 +47,8 @@ class VerdictCounts(BaseModel):
     held_pct: float = 0.0
     refused_pct: float = 0.0
     inconclusive_pct: float = 0.0
+    # How many held trials also had canary_in_args=True (section 3.5)
+    canary_in_args_held: int = 0
 
 
 class NormalTaskCounts(BaseModel):
@@ -74,11 +76,12 @@ class NormalConditionSummary(BaseModel):
 
 
 class ConditionSummary(BaseModel):
-    """Summary for one evaluation condition (channel × defense × guard_on)."""
+    """Summary for one evaluation condition (channel × defense × guard_on × probe_id)."""
 
     channel: str | None             # None for normal trials; kept for completeness
     defense: str
     guard_on: bool
+    probe_id: str | None = None     # None when probe_id is absent or not relevant
     attack: VerdictCounts
     cards_shown: int = 0            # total Guard holds across trials in this condition
 
@@ -142,21 +145,23 @@ def _pct(n: int, total: int) -> float:
 def _aggregate_attack(
     attack_trials: list[TrialRecord],
 ) -> list[ConditionSummary]:
-    """Group attack trials by (channel, defense, guard_on) and count verdicts."""
-    # Use a dict keyed by (channel, defense, guard_on)
+    """Group attack trials by (channel, defense, guard_on, probe_id) and count verdicts."""
+    # Use a dict keyed by (channel, defense, guard_on, probe_id)
     groups: dict[tuple, dict] = defaultdict(lambda: {
         "leaked": 0, "held": 0, "refused": 0, "inconclusive": 0,
-        "skipped": 0, "cards_shown": 0,
+        "skipped": 0, "cards_shown": 0, "canary_in_args_held": 0,
     })
 
     for trial in attack_trials:
-        key = (trial.channel, trial.defense, trial.guard_on)
+        key = (trial.channel, trial.defense, trial.guard_on, trial.probe_id)
         g = groups[key]
         verdict = trial.verdict
         if verdict == "leaked":
             g["leaked"] += 1
         elif verdict == "held":
             g["held"] += 1
+            if trial.canary_in_args:
+                g["canary_in_args_held"] += 1
         elif verdict == "refused":
             g["refused"] += 1
         elif verdict == "inconclusive":
@@ -166,7 +171,7 @@ def _aggregate_attack(
         g["cards_shown"] += trial.cards_shown
 
     conditions: list[ConditionSummary] = []
-    for (channel, defense, guard_on), g in groups.items():
+    for (channel, defense, guard_on, probe_id), g in groups.items():
         total = g["leaked"] + g["held"] + g["refused"] + g["inconclusive"] + g["skipped"]
         # Denominator for percentages excludes skipped
         pct_base = total - g["skipped"]
@@ -182,19 +187,21 @@ def _aggregate_attack(
             held_pct=_pct(g["held"], pct_base),
             refused_pct=_pct(g["refused"], pct_base),
             inconclusive_pct=_pct(g["inconclusive"], pct_base),
+            canary_in_args_held=g["canary_in_args_held"],
         )
         conditions.append(
             ConditionSummary(
                 channel=channel,
                 defense=defense,
                 guard_on=guard_on,
+                probe_id=probe_id,
                 attack=verdict_counts,
                 cards_shown=g["cards_shown"],
             )
         )
 
-    # Stable ordering: channel, defense, guard_on
-    conditions.sort(key=lambda c: (c.channel or "", c.defense, c.guard_on))
+    # Stable ordering: channel, probe_id, defense, guard_on — keeps each probe's rows together
+    conditions.sort(key=lambda c: (c.channel or "", c.probe_id or "", c.defense, c.guard_on))
     return conditions
 
 

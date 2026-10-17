@@ -148,8 +148,21 @@ TOOL_RESULT_TASK_PROMPT = "Read the reviews for flight 1 and summarise them."
 
 
 def _count_held(trace: "Trace") -> int:
-    """Return the number of tool calls in *trace* whose guard_decision is 'hold'."""
-    return sum(1 for c in trace.tool_calls if c.guard_decision == "hold")
+    """Return the number of *distinct* held (name, params) pairs in *trace*.
+
+    The Telegram gate deduplicates identical calls via _sent_hashes, so a tool
+    retried N times with the same arguments only shows one card.  We mirror that
+    by counting unique (tool_name, stable-JSON-of-params) pairs rather than every
+    held call.
+    """
+    import json
+
+    seen: set[tuple[str, str]] = set()
+    for c in trace.tool_calls:
+        if c.guard_decision == "hold":
+            key = (c.name, json.dumps(c.params, sort_keys=True))
+            seen.add(key)
+    return len(seen)
 
 
 # ---------------------------------------------------------------------------

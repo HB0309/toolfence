@@ -57,6 +57,7 @@ function buildSecurityGrid(conditions) {
     <table id="security-table">
       <thead><tr>
         <th>Channel</th>
+        <th>Probe</th>
         <th>Defense</th>
         <th>Guard</th>
         <th class="num">Leaked</th>
@@ -70,6 +71,7 @@ function buildSecurityGrid(conditions) {
         <th class="num">Refused%</th>
         <th class="num">Inconclusive%</th>
         <th class="num">Cards Shown</th>
+        <th class="num">Canary-in-args held</th>
       </tr></thead>
       <tbody>`;
 
@@ -78,6 +80,7 @@ function buildSecurityGrid(conditions) {
     const total = a.total || 0;
     return `<tr>
       <td>${esc(c.channel)}</td>
+      <td>${esc(c.probe_id)}</td>
       <td>${esc(c.defense)}</td>
       <td>${guardBadge(c.guard_on)}</td>
       <td class="num">${a.leaked}</td>
@@ -91,6 +94,7 @@ function buildSecurityGrid(conditions) {
       <td class="num">${a.refused_pct}%</td>
       <td class="num">${a.inconclusive_pct}%</td>
       <td class="num">${c.cards_shown}</td>
+      <td class="num">${a.canary_in_args_held ?? 0}</td>
     </tr>`;
   }).join("");
 
