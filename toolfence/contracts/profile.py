@@ -104,6 +104,7 @@ class NormalTask(BaseModel):
 
     prompt: str
     goal_tool: str
+    label: str = "primary"
 
 
 # ---------------------------------------------------------------------------

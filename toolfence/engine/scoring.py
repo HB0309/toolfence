@@ -100,6 +100,8 @@ class ResultSummary(BaseModel):
     total_trials: int
     disclaimer: str                 # always DISCLAIMER (ENG-8)
     timestamp: str = ""             # ISO-8601 set by the runner; empty string when not set
+    model: str = ""                 # model name taken from trial traces; empty when not available
+    host: str = ""                  # provider/host string taken from trial traces; empty when not available
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +135,15 @@ def aggregate(trial_records: list[TrialRecord], run_id: str) -> ResultSummary:
         run_id, len(conditions), normal_tasks.success, normal_tasks.total,
     )
 
+    # Extract model and host from the first trial that has a trace.
+    model = ""
+    host = ""
+    for trial in trial_records:
+        if trial.trace is not None:
+            model = trial.trace.model
+            host = trial.trace.host
+            break
+
     return ResultSummary(
         run_id=run_id,
         conditions=conditions,
@@ -140,6 +151,8 @@ def aggregate(trial_records: list[TrialRecord], run_id: str) -> ResultSummary:
         normal_conditions=normal_conditions,
         total_trials=len(trial_records),
         disclaimer=DISCLAIMER,
+        model=model,
+        host=host,
     )
 
 

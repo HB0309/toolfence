@@ -47,6 +47,10 @@ def render_report(summary: ResultSummary) -> str:
     lines.append("")
     lines.append(f"**Run ID:** `{summary.run_id}`")
     lines.append(f"**Total trials:** {summary.total_trials}")
+    if summary.model:
+        lines.append(f"**Model:** `{summary.model}`")
+    if summary.host:
+        lines.append(f"**Host:** {summary.host}")
     lines.append("")
 
     # ------------------------------------------------------------------
@@ -126,6 +130,17 @@ def render_report(summary: ResultSummary) -> str:
             )
 
     lines.append("")
+
+    # Note for user-input probes — Guard-on "leaked" is the expected control
+    # result for this channel because the canary is in the user's own message.
+    if any(c.channel == "user-input" for c in summary.conditions):
+        lines.append(
+            "> **Note (user-input probes):** here the canary is in the user's own message. "
+            "Guard passes values the user typed, by design, so *leaked* with Guard on is "
+            "the expected control result: Guard doesn't block what the user asked for. "
+            "The tool-result rows are where Guard is tested."
+        )
+        lines.append("")
 
     # ------------------------------------------------------------------
     # Cards shown summary (separate section for quick scan)

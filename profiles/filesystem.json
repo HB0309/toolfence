@@ -17,7 +17,8 @@
   "agent_persona": "helpful file management assistant",
   "normal_task": {
     "prompt": "Create the file {{WORKDIR}}/summary.txt containing the text: Hello from ToolFence.",
-    "goal_tool": "mcp_filesystem_write_file"
+    "goal_tool": "mcp_filesystem_write_file",
+    "label": "write_only"
   },
   "extra_normal_tasks": [
     {
