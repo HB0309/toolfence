@@ -48,6 +48,7 @@ class TrialRecord(BaseModel):
     canary_in_args: bool
     cards_shown: int
     skip_reason: str | None = None          # present when verdict == "skipped"
+    task_label: str | None = None           # label for normal trials (e.g. "write_only", "read_then_write")
 
     @model_validator(mode="after")
     def _check_invariants(self) -> "TrialRecord":

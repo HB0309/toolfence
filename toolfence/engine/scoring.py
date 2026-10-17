@@ -63,10 +63,11 @@ class NormalTaskCounts(BaseModel):
 
 
 class NormalConditionSummary(BaseModel):
-    """Normal-task counts for one defense × guard_on condition."""
+    """Normal-task counts for one defense × guard_on × task_label condition."""
 
     defense: str
     guard_on: bool
+    task_label: str | None = None  # None = primary task (single-task profiles)
     success: int = 0
     failed: int = 0
     undetermined: int = 0          # task_success=None
@@ -212,20 +213,20 @@ def _aggregate_normal(
 
     Returns a tuple of:
     - ``NormalTaskCounts`` — flat aggregate across all conditions.
-    - ``list[NormalConditionSummary]`` — per ``(defense, guard_on)`` breakdown.
+    - ``list[NormalConditionSummary]`` — per ``(task_label, defense, guard_on)`` breakdown.
 
     ``task_success=None`` is counted as ``undetermined`` (not ``failed``).
     Both ``skipped`` and ``undetermined`` are excluded from the
     ``success_pct`` denominator, consistent with how ``inconclusive`` is
     handled for attack trials (ENG-7).
     """
-    # Per-condition groups keyed by (defense, guard_on)
+    # Per-condition groups keyed by (task_label, defense, guard_on)
     groups: dict[tuple, dict] = defaultdict(
         lambda: {"success": 0, "failed": 0, "undetermined": 0, "skipped": 0}
     )
 
     for trial in normal_trials:
-        key = (trial.defense, trial.guard_on)
+        key = (trial.task_label, trial.defense, trial.guard_on)
         g = groups[key]
         if trial.verdict == "skipped":
             g["skipped"] += 1
@@ -236,14 +237,17 @@ def _aggregate_normal(
         else:
             g["failed"] += 1
 
-    # Build per-condition summaries
+    # Build per-condition summaries — sort by (task_label, defense, guard_on)
     normal_conditions: list[NormalConditionSummary] = []
-    for (defense, guard_on), g in sorted(groups.items(), key=lambda x: (x[0][0], x[0][1])):
+    for (task_label, defense, guard_on), g in sorted(
+        groups.items(), key=lambda x: (x[0][0] or "", x[0][1], x[0][2])
+    ):
         total = g["success"] + g["failed"] + g["undetermined"] + g["skipped"]
         pct_base = total - g["skipped"] - g["undetermined"]
         normal_conditions.append(NormalConditionSummary(
             defense=defense,
             guard_on=guard_on,
+            task_label=task_label,
             success=g["success"],
             failed=g["failed"],
             undetermined=g["undetermined"],

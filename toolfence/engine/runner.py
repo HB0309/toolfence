@@ -363,6 +363,7 @@ class EvaluationRunner:
         for probe_dict, adapter in self._normal_probes:
             prompt: str = probe_dict["content"]
             goal_tool: str = probe_dict.get("goal_tool", DEFAULT_GOAL_TOOL)
+            task_label: str | None = probe_dict.get("label")
 
             for defense in self._defenses:
                 counter += 1
@@ -391,6 +392,7 @@ class EvaluationRunner:
                         trace=trace,
                         canary_in_args=False,
                         cards_shown=_count_held(trace),
+                        task_label=task_label,
                     )
                 )
 

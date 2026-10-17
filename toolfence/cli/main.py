@@ -343,9 +343,20 @@ def _cmd_run(
             {
                 "content": profile.normal_task.prompt,
                 "goal_tool": profile.normal_task.goal_tool,
+                "label": "write_only",
             },
             ScriptedAdapter(normal_fix_path),
         ))
+        # Extra normal tasks (e.g. read_then_write for filesystem profile).
+        for extra in profile.extra_normal_tasks:
+            normal_probes.append((
+                {
+                    "content": extra.prompt,
+                    "goal_tool": extra.goal_tool,
+                    "label": extra.label,
+                },
+                ScriptedAdapter(normal_fix_path),
+            ))
     else:
         # Legacy fixed probe list (backward-compatible Galaxium path).
         _ATTACK_PAIRS: list[tuple[str, str]] = [

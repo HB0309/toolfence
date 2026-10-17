@@ -113,6 +113,7 @@ function buildNormalGrid(normalConditions, normalTasks) {
   let html = `
     <table id="normal-table">
       <thead><tr>
+        <th>Task</th>
         <th>Defense</th>
         <th>Guard</th>
         <th class="num">Success</th>
@@ -125,6 +126,7 @@ function buildNormalGrid(normalConditions, normalTasks) {
       <tbody>`;
 
   html += normalConditions.map(nc => `<tr>
+    <td>${esc(nc.task_label)}</td>
     <td>${esc(nc.defense)}</td>
     <td>${guardBadge(nc.guard_on)}</td>
     <td class="num">${nc.success}</td>

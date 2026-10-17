@@ -77,12 +77,13 @@ def render_report(summary: ResultSummary) -> str:
     if summary.normal_conditions:
         lines.append("### Normal-Task Results by Condition")
         lines.append("")
-        lines.append("| Defense | Guard | Success | Failed | Undetermined | Skipped | Total | Success% |")
-        lines.append("|---------|-------|--------:|-------:|-------------:|--------:|------:|---------:|")
+        lines.append("| Task | Defense | Guard | Success | Failed | Undetermined | Skipped | Total | Success% |")
+        lines.append("|------|---------|-------|--------:|-------:|-------------:|--------:|------:|---------:|")
         for nc in summary.normal_conditions:
             guard_label = "✓" if nc.guard_on else "✗"
+            task_label = nc.task_label or "—"
             lines.append(
-                f"| {nc.defense} | {guard_label} | "
+                f"| {task_label} | {nc.defense} | {guard_label} | "
                 f"{nc.success} | {nc.failed} | {nc.undetermined} | {nc.skipped} | {nc.total} | {nc.success_pct}% |"
             )
         lines.append("")
