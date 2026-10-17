@@ -14,10 +14,13 @@ ScriptedAdapter
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Protocol
 
 from toolfence.contracts.trace import Trace
+
+log = logging.getLogger(__name__)
 
 
 class AgentAdapter(Protocol):
@@ -52,9 +55,11 @@ class ScriptedAdapter:
 
     def __init__(self, fixture_path: str | Path) -> None:
         path = Path(fixture_path)
+        log.debug("ScriptedAdapter: loading fixture %s", path)
         raw = json.loads(path.read_text(encoding="utf-8"))
         # Validate once; store the model so every replay returns a fresh copy.
         self._trace = Trace.model_validate(raw)
+        log.debug("ScriptedAdapter: fixture loaded — %d tool call(s)", len(self._trace.tool_calls))
 
     # ------------------------------------------------------------------
     # AgentAdapter implementation
@@ -67,6 +72,9 @@ class ScriptedAdapter:
         ignored — the fixture already encodes the full outcome, including any
         errors or non-ok status values.
         """
+        log.debug("ScriptedAdapter.run_turn: replaying fixture (defense=%r)", defense)
         # model_copy() gives a new object with the same field values;
         # deep=True ensures nested models are not shared between calls.
-        return self._trace.model_copy(deep=True)
+        trace = self._trace.model_copy(deep=True)
+        log.info("ScriptedAdapter: replayed trace status=%r, tool_calls=%d", trace.status, len(trace.tool_calls))
+        return trace

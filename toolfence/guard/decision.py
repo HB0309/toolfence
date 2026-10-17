@@ -19,11 +19,12 @@ the proxy layer, not held.
 
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
-# ProvenanceLabel is the canonical type alias defined in contracts — import and
-# reuse; do not redefine here.
 from toolfence.contracts.trace import ProvenanceLabel  # noqa: F401 — re-exported for callers
+
+log = logging.getLogger(__name__)
 
 
 GuardResult = Literal["pass", "hold"]
@@ -70,27 +71,36 @@ class GuardDecision:
         GuardResult
             ``"hold"`` if any hold condition is met; ``"pass"`` otherwise.
         """
+        log.debug(
+            "GuardDecision.decide: tool=%r action_class=%r tainted=%s params=%s",
+            tool_name, action_class, session_tainted, list(arguments.keys()),
+        )
         # Branch 1 — irreversible actions always hold.
         if action_class == "irreversible":
+            log.info("GuardDecision: HOLD — irreversible tool %r", tool_name)
             return "hold"
 
         # Branch 4 shortcut — reads always pass (GRD-12).
-        # Check this before state-changing branches so "read" never accidentally
-        # triggers a hold even in a tainted session with untrusted arguments.
         if action_class == "read":
+            log.debug("GuardDecision: pass — read-class tool %r", tool_name)
             return "pass"
 
         # Remaining branches apply only to state-changing (and unknown) classes.
         # Branch 2 — state-changing call in a tainted session.
         if session_tainted:
+            log.info("GuardDecision: HOLD — tainted session, tool %r", tool_name)
             return "hold"
 
         # Branch 3 — any argument provenance is "untrusted".
-        # Missing provenance entries default to "untrusted" (fail-closed per GRD-4).
         for param_name in arguments:
             label = provenance.get(param_name, "untrusted")
             if label == "untrusted":
+                log.info(
+                    "GuardDecision: HOLD — untrusted argument %r in tool %r",
+                    param_name, tool_name,
+                )
                 return "hold"
 
         # Branch 4 — all other cases pass.
+        log.debug("GuardDecision: pass — tool %r", tool_name)
         return "pass"

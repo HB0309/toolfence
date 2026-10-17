@@ -17,6 +17,10 @@ Design principles
 
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger(__name__)
+
 
 class ConfirmGrant:
     """Stores and validates a pending user-approval grant.
@@ -42,6 +46,7 @@ class ConfirmGrant:
 
         Replaces any previously stored pending grant.
         """
+        log.info("ConfirmGrant.store_pending: tool=%r hash=%r", tool_name, args_hash[:8] + "…")
         self._pending_tool = tool_name
         self._pending_hash = args_hash
 
@@ -55,8 +60,10 @@ class ConfirmGrant:
         Returns ``False`` without side-effects on any mismatch.
         """
         if self._pending_tool != tool_name or self._pending_hash != args_hash:
+            log.debug("ConfirmGrant.consume_grant: no matching grant for tool=%r", tool_name)
             return False
         # Successful match — clear the grant and return True.
+        log.info("ConfirmGrant.consume_grant: grant consumed for tool=%r", tool_name)
         self._pending_tool = None
         self._pending_hash = None
         return True

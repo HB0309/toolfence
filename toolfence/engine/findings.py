@@ -16,10 +16,13 @@ This module belongs to ``toolfence/engine/`` and may import from
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Union
 
 import jsonschema
+
+log = logging.getLogger(__name__)
 
 # Path to the findings JSON Schema, co-located with the other contract schemas.
 _SCHEMA_PATH = (
@@ -51,15 +54,18 @@ def load_findings(path: Union[Path, str]) -> list[dict]:
     FileNotFoundError
         If ``path`` does not exist.
     """
+    log.debug("load_findings: reading %s", path)
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
 
     try:
         jsonschema.validate(instance=data, schema=schema)
     except jsonschema.ValidationError as exc:
+        log.error("load_findings: schema validation failed for %s — %s", path, exc.message)
         raise ValueError(
             f"findings file {path!r} failed schema validation: {exc.message}"
         ) from exc
+    log.info("load_findings: loaded %d finding(s) from %s", len(data), path)
 
     return data  # type: ignore[return-value]
 

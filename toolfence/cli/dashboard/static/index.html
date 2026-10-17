@@ -1,179 +1,224 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ToolFence Dashboard</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
-      font-size: 14px;
-      line-height: 1.6;
-      background: #ffffff;
-      color: #1f2328;
-      padding: 24px;
-      max-width: 1100px;
-      margin: 0 auto;
-    }
-    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 4px; }
-    h2 { font-size: 1.1rem; font-weight: 600; margin: 24px 0 8px; color: #1f2328; }
-    h3 { font-size: 0.95rem; font-weight: 600; margin: 16px 0 6px; color: #57606a; }
-    .subtitle { color: #57606a; font-size: 0.875rem; margin-bottom: 20px; }
-    .disclaimer {
-      border: 1px solid #e5e7eb;
-      border-left: 4px solid #3b82d4;
-      background: #f7f8fa;
-      padding: 10px 14px;
-      border-radius: 4px;
-      color: #57606a;
-      font-size: 0.85rem;
-      margin-bottom: 24px;
-    }
-
-    /* Tables */
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.85rem;
-      margin-bottom: 16px;
-    }
-    th {
-      background: #f7f8fa;
-      border: 1px solid #e5e7eb;
-      padding: 6px 10px;
-      text-align: left;
-      font-weight: 600;
-      white-space: nowrap;
-    }
-    th.num, td.num { text-align: right; }
-    td {
-      border: 1px solid #e5e7eb;
-      padding: 5px 10px;
-      white-space: nowrap;
-    }
-    tr:nth-child(even) td { background: #f7f8fa; }
-    .badge {
-      display: inline-block;
-      padding: 1px 6px;
-      border-radius: 3px;
-      font-size: 0.75rem;
-      font-weight: 600;
-    }
-    .badge-on  { background: #d1fae5; color: #065f46; }
-    .badge-off { background: #f3f4f6; color: #57606a; }
-    .badge-leaked     { background: #fee2e2; color: #991b1b; }
-    .badge-held       { background: #fef9c3; color: #854d0e; }
-    .badge-refused    { background: #d1fae5; color: #065f46; }
-    .badge-inconclusive { background: #e0e7ff; color: #3730a3; }
-
-    /* Replay */
-    .replay-section {
-      border: 1px solid #e5e7eb;
-      border-radius: 6px;
-      padding: 16px;
-      margin-top: 24px;
-      background: #f7f8fa;
-    }
-    #replay-btn {
-      background: #3b82d4;
-      color: #fff;
-      border: none;
-      border-radius: 4px;
-      padding: 7px 18px;
-      font-size: 0.875rem;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    #replay-btn:hover { background: #2563eb; }
-    #replay-btn:disabled { background: #9ca3af; cursor: default; }
-    #replay-progress {
-      margin-top: 12px;
-      font-size: 0.8rem;
-      color: #57606a;
-    }
-    #replay-counter {
-      margin-top: 6px;
-      font-weight: 600;
-      font-size: 0.85rem;
-    }
-    .replay-card {
-      margin-top: 10px;
-      border: 1px solid #e5e7eb;
-      border-radius: 4px;
-      background: #ffffff;
-      padding: 10px 14px;
-      font-size: 0.8rem;
-      line-height: 1.5;
-    }
-    .replay-card .label { color: #57606a; font-size: 0.75rem; }
-    .replay-card .value { font-weight: 600; }
-
-    /* Trend */
-    .trend-table td.run-id { font-family: monospace; font-size: 0.8rem; }
-
-    /* Loading state */
-    .loading { color: #57606a; font-style: italic; }
-    .error   { color: #991b1b; font-style: italic; }
-  </style>
+  <link rel="stylesheet" href="static/vendor/tabler.min.css">
+  <link rel="stylesheet" href="static/vendor/tabulator_midnight.min.css">
+  <link rel="stylesheet" href="static/style.css">
 </head>
-<body>
+<body class="antialiased">
 
-<h1>ToolFence Dashboard</h1>
-<p class="subtitle">Read-only evaluation results. No live model calls are made.</p>
+<!-- ============================================================ -->
+<!-- Navbar                                                        -->
+<!-- ============================================================ -->
+<header class="navbar navbar-expand-md d-print-none">
+  <div class="container-xl">
+    <a class="navbar-brand" href="#">
+      <span class="navbar-brand-text fw-bold">ToolFence</span>
+    </a>
+    <span class="text-muted ms-2 d-none d-md-inline" style="font-size:0.85rem">
+      Agent tool-safety results
+    </span>
+  </div>
+</header>
 
-<div class="disclaimer">
-  ⓘ A clean result means the evaluation did not find a way through, not that none exists.
+<!-- ============================================================ -->
+<!-- Page wrapper                                                  -->
+<!-- ============================================================ -->
+<div class="page-wrapper">
+  <div class="container-xl py-3">
+
+    <!-- -------------------------------------------------------- -->
+    <!-- Filter bar                                               -->
+    <!-- -------------------------------------------------------- -->
+    <div id="filter-bar" class="card mb-3">
+      <div class="card-body py-2">
+        <div class="row g-2 align-items-end">
+          <div class="col-auto">
+            <label class="form-label form-label-sm mb-1">Run</label>
+            <select id="f-run" class="form-select form-select-sm"></select>
+          </div>
+          <div class="col-auto">
+            <label class="form-label form-label-sm mb-1">App</label>
+            <select id="f-app" class="form-select form-select-sm"></select>
+          </div>
+          <div class="col-auto">
+            <label class="form-label form-label-sm mb-1">Model</label>
+            <select id="f-model" class="form-select form-select-sm"></select>
+          </div>
+          <div class="col-auto">
+            <label class="form-label form-label-sm mb-1">Guard</label>
+            <select id="f-guard" class="form-select form-select-sm"></select>
+          </div>
+          <div class="col-auto">
+            <label class="form-label form-label-sm mb-1">Defense</label>
+            <select id="f-defense" class="form-select form-select-sm"></select>
+          </div>
+          <div class="col-auto">
+            <label class="form-label form-label-sm mb-1">Kind</label>
+            <select id="f-kind" class="form-select form-select-sm"></select>
+          </div>
+          <div class="col-auto ms-auto d-flex gap-2 align-items-end">
+            <button id="f-reset" class="btn btn-sm btn-outline-secondary">Reset</button>
+            <button id="f-share" class="btn btn-sm btn-outline-secondary">Share</button>
+          </div>
+        </div>
+        <div id="filter-chips" class="d-flex flex-wrap gap-1 mt-2"></div>
+      </div>
+    </div>
+
+    <!-- -------------------------------------------------------- -->
+    <!-- KPI strip                                                -->
+    <!-- -------------------------------------------------------- -->
+    <div id="kpi-strip" class="row row-cards mb-3">
+      <!-- populated by app.js renderKpis() -->
+    </div>
+
+    <!-- -------------------------------------------------------- -->
+    <!-- Charts row: Guard off vs on / Verdict mix               -->
+    <!-- -------------------------------------------------------- -->
+    <div class="row g-2 mb-2">
+      <div class="col-lg-5">
+        <div class="card h-100">
+          <div class="card-header"><h3 class="card-title">Guard off vs on <span class="card-sub">leak rate per probe</span></h3></div>
+          <div class="card-body">
+            <div id="chart-dumbbell" style="height:240px"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-7">
+        <div class="card h-100">
+          <div class="card-header"><h3 class="card-title">Where leaks happen <span class="card-sub">leaked k/n · click a cell to filter</span></h3></div>
+          <div class="card-body">
+            <div id="security-grid">
+              <div id="chart-heatmap" style="height:240px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-2 mb-2">
+      <div class="col-lg-4">
+        <div class="card h-100 neon-card">
+          <div class="card-header"><h3 class="card-title">What happened to attacks <span class="card-sub">all attack trials</span></h3></div>
+          <div class="card-body">
+            <div id="chart-donuts" style="height:230px"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-5">
+        <div class="card h-100">
+          <div class="card-header"><h3 class="card-title">Verdict mix <span class="card-sub">share of trials</span></h3></div>
+          <div class="card-body">
+            <div id="chart-verdicts" style="height:240px"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-3">
+        <div class="card h-100">
+          <div class="card-header"><h3 class="card-title">Real tasks <span class="card-sub">does work still get done?</span></h3></div>
+          <div class="card-body p-0">
+            <table id="normal-table" class="table table-sm table-vcenter card-table mb-0">
+              <thead>
+                <tr>
+                  <th>Task</th>
+                  <th>Guard</th>
+                  <th>Success</th>
+                  <th class="d-none">Failed</th>
+                  <th class="d-none">Undetermined</th>
+                  <th class="d-none">Run(s)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- populated by app.js renderNormalTable() -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- -------------------------------------------------------- -->
+    <!-- Trial explorer                                          -->
+    <!-- -------------------------------------------------------- -->
+    <div class="card mb-3">
+      <div class="card-header">
+        <h3 class="card-title">Trial explorer</h3>
+        <div class="card-options">
+          <button id="replay-btn" class="btn btn-sm btn-primary">▶ Replay</button>
+          <span id="replay-counter" class="ms-2 text-muted" style="font-variant-numeric:tabular-nums"></span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="trial-table" class="mb-3"></div>
+        <!-- replay-list wraps replay-progress; replay.js prepends .replay-card into
+             replay-progress; explorer.js replaces both in S3 -->
+        <div id="replay-list">
+          <div id="replay-progress"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- -------------------------------------------------------- -->
+    <!-- Footer / disclaimer + verdict legend                    -->
+    <!-- -------------------------------------------------------- -->
+    <footer class="tf-footer">
+      <div>
+        <div class="text-muted" style="font-size:0.8rem">
+          A clean result means the evaluation did not find a way through, not that none exists.
+          &nbsp;|&nbsp;
+          <span class="verdict-legend">
+            <span style="color:#D55E00">● leaked</span>&nbsp;
+            <span style="color:#56B4E9">● held</span>&nbsp;
+            <span style="color:#009E73">● refused</span>&nbsp;
+            <span style="color:#8A8F98">● inconclusive</span>
+          </span>
+        </div>
+      </div>
+    </footer>
+
+  </div><!-- /container-xl -->
+</div><!-- /page-wrapper -->
+
+<!-- ============================================================ -->
+<!-- Offcanvas flyout: trial detail                               -->
+<!-- ============================================================ -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="trial-flyout" style="width:640px">
+  <div class="offcanvas-header">
+    <h5 class="offcanvas-title">Trial detail</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body" id="trial-flyout-body">
+    <!-- populated by explorer.js -->
+  </div>
 </div>
 
-<!-- ================================================================ -->
-<!-- Run selector (shown only in multi-run mode)                      -->
-<!-- ================================================================ -->
-<div id="run-selector-container" style="display:none"></div>
-
-<!-- ================================================================ -->
-<!-- Security results grid                                             -->
-<!-- ================================================================ -->
-<h2>Security Results</h2>
-<p style="font-size:0.8rem;color:#57606a;margin-bottom:6px">
-  Verdict counts per channel × defense × guard condition.
-  <strong>Inconclusive</strong> verdicts are always in their own column — never folded into pass/fail.
-</p>
-<p id="security-loading" class="loading">Loading…</p>
-<div id="security-grid"></div>
-
-<!-- ================================================================ -->
-<!-- Normal-task results                                               -->
-<!-- ================================================================ -->
-<h2>Normal-Task Results</h2>
-<p id="normal-loading" class="loading">Loading…</p>
-<div id="normal-grid"></div>
-
-<!-- ================================================================ -->
-<!-- Run comparison table (shown only in multi-run mode)              -->
-<!-- ================================================================ -->
-<div id="run-comparison-container" style="display:none"></div>
-
-<!-- ================================================================ -->
-<!-- Trend (run-over-run summary)                                      -->
-<!-- ================================================================ -->
-<h2>Trend</h2>
-<p id="trend-note" class="loading">Loading…</p>
-<div id="trend-grid"></div>
-
-<!-- ================================================================ -->
-<!-- Replay                                                            -->
-<!-- ================================================================ -->
-<div class="replay-section">
-  <h2 style="margin-top:0">Replay Stored Trials</h2>
-  <p style="font-size:0.85rem;color:#57606a;margin-bottom:10px;">
-    Steps through stored trial records one by one. No live execution.
-  </p>
-  <button id="replay-btn">▶ Start Replay</button>
-  <div id="replay-counter"></div>
-  <div id="replay-progress"></div>
+<!-- ============================================================ -->
+<!-- Hidden stub elements kept for replay.js compatibility        -->
+<!-- These are removed in S3 when replay.js is deleted.           -->
+<!-- ============================================================ -->
+<div style="display:none" aria-hidden="true">
+  <span id="security-loading"></span>
+  <span id="normal-loading"></span>
+  <span id="normal-grid"></span>
+  <span id="trend-note"></span>
+  <span id="trend-grid"></span>
+  <span id="run-selector-container"></span>
+  <span id="run-comparison-container"></span>
 </div>
 
-<script src="/static/replay.js"></script>
+<!-- ============================================================ -->
+<!-- Scripts (order per spec §2)                                  -->
+<!-- ============================================================ -->
+<script src="static/vendor/tabler.min.js"></script>
+<script src="static/vendor/echarts.min.js"></script>
+<script src="static/vendor/tabulator.min.js"></script>
+<script src="static/app.js"></script>
+<script src="static/charts.js"></script>
+<script src="static/explorer.js"></script>
+
 </body>
 </html>

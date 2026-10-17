@@ -36,6 +36,7 @@ These issues are tracked for a later task.  Do not attempt to fix them here.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Awaitable, Callable
 
 from toolfence.contracts.guard import HeldCallEvent
@@ -45,6 +46,8 @@ from toolfence.guard.decision import GuardDecision
 from toolfence.guard.provenance import ProvenanceStore
 from toolfence.guard.proxy import GuardedProxy
 from toolfence.guard.taint import SessionTaint
+
+log = logging.getLogger(__name__)
 
 # Tools that must be removed unconditionally (GRD-13).
 _FORBIDDEN_TOOL_NAMES = frozenset(("spawn", "exec"))
@@ -78,9 +81,11 @@ def install_guard(
        afterward (e.g. on MCP reconnect) is also wrapped automatically (GRD-3).
        The patch also silently drops re-registration of ``spawn``/``exec``.
     """
-    # Step 1 — remove forbidden tools.
+    log.info("install_guard: installing Guard on registry (guard_on=%s, datamark_on=%s)", guard_on, datamark_on)
+    # Step 1 — remove forbidden tools (fail-closed: no try/except).
     for name in _FORBIDDEN_TOOL_NAMES:
         registry.unregister(name)
+        log.info("install_guard: removed forbidden tool %r", name)
 
     # Step 2 — wrap every current unwrapped tool in-place.
     def _make_proxy(tool: Any) -> GuardedProxy:
@@ -97,9 +102,13 @@ def install_guard(
             await_decision=await_decision,
         )
 
+    wrapped_count = 0
     for name, tool in list(registry._tools.items()):
         if not isinstance(tool, GuardedProxy):
             registry._tools[name] = _make_proxy(tool)
+            wrapped_count += 1
+            log.debug("install_guard: wrapped tool %r in GuardedProxy", name)
+    log.info("install_guard: wrapped %d tool(s)", wrapped_count)
 
     # Step 3 — patch register once; skip if already patched.
     if not getattr(registry, _GUARD_INSTALLED_ATTR, False):
@@ -129,11 +138,15 @@ def verify_guard_invariant(registry: Any) -> None:
     Call this before every ``process_direct`` turn to enforce that no raw tool
     has been re-inserted into the registry since ``install_guard`` ran.
     """
+    log.debug("verify_guard_invariant: checking %d tool(s)", len(registry.tool_names))
     for name in registry.tool_names:
         tool = registry._tools.get(name)
         if not isinstance(tool, GuardedProxy):
-            raise RuntimeError(
+            msg = (
                 f"Guard invariant violated: tool '{name}' is not a GuardedProxy "
                 f"(got {type(tool).__name__!r}).  "
                 "Call install_guard before process_direct."
             )
+            log.error("verify_guard_invariant: %s", msg)
+            raise RuntimeError(msg)
+    log.debug("verify_guard_invariant: all tools are GuardedProxy instances")

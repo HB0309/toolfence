@@ -37,12 +37,15 @@ deferred inside function bodies so the module is importable without nanobot on
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from typing import Any, Awaitable
 
 from toolfence.contracts.guard import HeldCallEvent
 from toolfence.guard.card import build_card_message
 from toolfence.guard.confirm import ConfirmGrant
+
+log = logging.getLogger(__name__)
 
 _NUDGE_TEXT = "Waiting for your answer: tap Allow or Decline on the card above."
 _TIMEOUT_TEXT = "No answer in time, so I didn't do it."
@@ -144,18 +147,12 @@ class DecisionGate:
     # ------------------------------------------------------------------
 
     def on_held(self, event: HeldCallEvent) -> None:
-        """Store the held event and schedule the confirm card.
-
-        If a decision is already pending, returns immediately without
-        creating a new future or sending a card.  The proxy's subsequent
-        ``await_decision`` call will detect the hash mismatch and return
-        ``False`` at once.
-        """
+        """Store the held event and schedule the confirm card."""
         if self._event is not None:
-            # A decision is already in flight — decline the new one via
-            # hash-mismatch in await_decision.
+            log.debug("DecisionGate.on_held: decision already pending — ignoring duplicate hold for tool %r", event.tool_name)
             return
 
+        log.info("DecisionGate.on_held: holding call for tool=%r reason=%r", event.tool_name, event.reason)
         self._event = event
         self._future = asyncio.get_running_loop().create_future()
         self._waiting = False
@@ -181,12 +178,15 @@ class DecisionGate:
         """
         # Hash mismatch — either idle or a different call is pending.
         if self._event is None or event.arguments_hash != self._event.arguments_hash:
+            log.debug("DecisionGate.await_decision: hash mismatch for tool %r — returning False", event.tool_name)
             return False
 
         # Duplicate waiter guard.
         if self._waiting:
+            log.warning("DecisionGate.await_decision: duplicate waiter for tool %r — returning False", event.tool_name)
             return False
 
+        log.info("DecisionGate.await_decision: waiting up to 120 s for decision on tool %r", event.tool_name)
         self._waiting = True
         try:
             result: bool = await asyncio.wait_for(
@@ -194,6 +194,7 @@ class DecisionGate:
                 timeout=120,
             )
         except asyncio.TimeoutError:
+            log.warning("DecisionGate.await_decision: timed out waiting for decision on tool %r", event.tool_name)
             self.clear()
             asyncio.get_running_loop().create_task(
                 self._send_timeout_message(),
@@ -201,15 +202,19 @@ class DecisionGate:
             )
             return False
         except asyncio.CancelledError:
+            log.debug("DecisionGate.await_decision: cancelled while waiting for tool %r", event.tool_name)
             self.clear()
             raise
         finally:
             self._waiting = False
 
         if result:
+            log.info("DecisionGate.await_decision: approved — storing grant for tool %r", event.tool_name)
             self._confirm_grant.store_pending(
                 event.tool_name, event.arguments_hash
             )
+        else:
+            log.info("DecisionGate.await_decision: declined for tool %r", event.tool_name)
         return result
 
     async def _send_timeout_message(self) -> None:

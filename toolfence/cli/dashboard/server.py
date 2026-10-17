@@ -20,9 +20,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -85,13 +88,16 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         from toolfence.contracts.trial import TrialRecord
 
         run_name = self._query_param("run")
+        log.debug("_serve_results: run_name=%r", run_name)
         sub_dir: Path | None = None
         if run_name is not None:
             if not _validate_run_name(run_name):
+                log.warning("_serve_results: invalid run name %r — 400", run_name)
                 self._bad_request()
                 return
             sub_dir = self.results_dir / run_name
             if not sub_dir.is_dir():
+                log.warning("_serve_results: run directory not found for %r — 404", run_name)
                 self._not_found()
                 return
 
@@ -102,10 +108,12 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 TrialRecord.model_validate(r)
                 records.append(r)
             except Exception:  # noqa: BLE001
+                log.warning("_serve_results: %s is not a valid TrialRecord — skipped", filename)
                 print(
                     f"Warning: {filename} is not a valid TrialRecord — skipped",
                     file=sys.stderr,
                 )
+        log.debug("_serve_results: serving %d valid record(s)", len(records))
         body = json.dumps(records, default=str).encode("utf-8")
         self._send_json(body)
 
@@ -114,13 +122,16 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         from toolfence.engine.scoring import aggregate
 
         run_name = self._query_param("run")
+        log.debug("_serve_summary: run_name=%r", run_name)
         sub_dir: Path | None = None
         if run_name is not None:
             if not _validate_run_name(run_name):
+                log.warning("_serve_summary: invalid run name %r — 400", run_name)
                 self._bad_request()
                 return
             sub_dir = self.results_dir / run_name
             if not sub_dir.is_dir():
+                log.warning("_serve_summary: run directory not found for %r — 404", run_name)
                 self._not_found()
                 return
 
@@ -237,7 +248,7 @@ def make_server(host: str, port: int, results_dir: Path) -> HTTPServer:
         (_DashboardHandler,),
         {"results_dir": results_dir},
     )
-    return HTTPServer((host, port), handler)
+    return ThreadingHTTPServer((host, port), handler)
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +258,7 @@ def make_server(host: str, port: int, results_dir: Path) -> HTTPServer:
 def run_server(host: str = "localhost", port: int = 8080,
                results_dir: Path = Path("results")) -> None:
     """Start the dashboard server and block until interrupted."""
+    log.info("run_server: starting on http://%s:%d, results_dir=%s", host, port, results_dir.resolve())
     server = make_server(host, port, results_dir)
     print(f"ToolFence dashboard listening on http://{host}:{port}")
     print(f"Serving results from: {results_dir.resolve()}")
