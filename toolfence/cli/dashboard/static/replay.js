@@ -256,6 +256,96 @@ function buildTrendTable(records) {
 }
 
 // ---------------------------------------------------------------------------
+// Tool-call detail helpers (trace view inside replay cards)
+// ---------------------------------------------------------------------------
+
+/**
+ * Return a provenance badge HTML string for a given label.
+ * label: "user" | "first-party" | "untrusted" (or any string)
+ */
+function renderProvBadge(label) {
+  if (!label) return "";
+  const cls = "prov-" + label.replace(/[^a-z0-9-]/g, "-");
+  return `<span class="badge ${cls}">${esc(label)}</span>`;
+}
+
+/**
+ * Return a guard-decision badge HTML string.
+ * decision: "pass" | "hold"
+ */
+function renderGuardDecisionBadge(decision) {
+  if (!decision) return "";
+  const cls = "guard-" + decision;
+  return `<span class="badge ${cls}">${esc(decision)}</span>`;
+}
+
+/**
+ * Return HTML for `text` with all occurrences of `canary` wrapped in
+ * <mark class="canary-hit">.  The surrounding text is HTML-escaped first;
+ * the canary substring is also escaped before insertion so the tag is safe.
+ * When canary is null/empty, or not found, returns esc(text).
+ */
+function annotateCanary(text, canary) {
+  if (!canary || text === null || text === undefined) return esc(String(text ?? ""));
+  const str = String(text);
+  if (!str.includes(canary)) return esc(str);
+  // Split on the raw canary, escape each piece, rejoin with the <mark>.
+  const escapedCanary = esc(canary);
+  return str
+    .split(canary)
+    .map(piece => esc(piece))
+    .join(`<mark class="canary-hit" title="canary string">${escapedCanary}</mark>`);
+}
+
+/**
+ * Render the full tool-call sub-section HTML for one trial.
+ * toolCalls: array of TraceEntry objects (may be empty).
+ * canary: the trial's canary string, or null for normal trials.
+ */
+function renderToolCalls(toolCalls, canary) {
+  if (!toolCalls || toolCalls.length === 0) return "";
+
+  const callHtml = toolCalls.map(tc => {
+    // --- params rows ---
+    const params = tc.params || {};
+    const provenance = tc.provenance || {};
+    const paramRows = Object.entries(params).map(([pName, pVal]) => {
+      const rawVal = (pVal === null || pVal === undefined) ? "" : String(pVal);
+      const displayVal = annotateCanary(rawVal, canary);
+      const provLabel = provenance[pName];
+      const provHtml = provLabel ? " " + renderProvBadge(provLabel) : "";
+      return `<div class="tc-param">
+          <span class="param-name">${esc(pName)}</span>${provHtml}:
+          <span class="param-value">${displayVal}</span>
+        </div>`;
+    }).join("");
+
+    // --- result / error row ---
+    let output = "";
+    if (tc.result !== null && tc.result !== undefined) {
+      const raw = String(tc.result);
+      const truncated = raw.length > 300 ? raw.slice(0, 300) + "…" : raw;
+      output = `<div class="tc-result">${esc(truncated)}</div>`;
+    } else if (tc.error) {
+      const raw = String(tc.error);
+      const truncated = raw.length > 300 ? raw.slice(0, 300) + "…" : raw;
+      output = `<div class="tc-result tc-result-error">${esc(truncated)}</div>`;
+    }
+
+    return `<div class="tool-call">
+        <div class="tc-header">
+          <span class="tc-name">${esc(tc.name)}</span>
+          &nbsp;${renderGuardDecisionBadge(tc.guard_decision)}
+        </div>
+        ${paramRows}
+        ${output}
+      </div>`;
+  }).join("");
+
+  return `<div class="tool-calls">${callHtml}</div>`;
+}
+
+// ---------------------------------------------------------------------------
 // Replay logic
 // ---------------------------------------------------------------------------
 
@@ -326,6 +416,7 @@ function initReplay(records) {
         <span class="label">verdict</span>
         ${rec.kind === "attack" ? verdictBadge(rec.verdict) : "<span style='color:#57606a'>—</span>"}
         ${rec.channel ? `&nbsp;|&nbsp;<span class="label">channel</span> <span class="value">${esc(rec.channel)}</span>` : ""}
+        ${renderToolCalls(rec.trace ? rec.trace.tool_calls : [], rec.canary)}
       `;
       progress.prepend(card);
     }, REPLAY_INTERVAL_MS);

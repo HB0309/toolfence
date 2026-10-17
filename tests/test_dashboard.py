@@ -230,3 +230,38 @@ def test_dashboard_no_outbound_requests(dashboard_url: str) -> None:
         "Dashboard made outbound requests (must only call localhost):\n"
         + "\n".join(outbound_urls)
     )
+
+
+# ---------------------------------------------------------------------------
+# Sub-Task 3: replay card contains .tool-calls element
+# ---------------------------------------------------------------------------
+
+def test_dashboard_replay_shows_tool_calls(dashboard_url: str) -> None:
+    """Each replay card must contain a .tool-calls child element (CLI-6 trace detail)."""
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.goto(dashboard_url)
+        page.wait_for_load_state("networkidle")
+
+        btn = page.query_selector("#replay-btn")
+        assert btn is not None, "Replay button (#replay-btn) not found"
+        assert not btn.is_disabled(), "Replay button should not be disabled"
+
+        # Start replay
+        btn.click()
+
+        # Wait for the first .replay-card to appear (generous timeout: 5 s)
+        page.wait_for_selector(".replay-card", timeout=5000)
+
+        # The first card rendered must contain a .tool-calls child
+        first_card = page.query_selector(".replay-card")
+        assert first_card is not None, "Expected at least one .replay-card"
+
+        tool_calls_el = first_card.query_selector(".tool-calls")
+        assert tool_calls_el is not None, (
+            "Expected a .tool-calls element inside the first .replay-card; "
+            "trace detail is missing from the replay card HTML"
+        )
+
+        browser.close()

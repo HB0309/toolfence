@@ -459,3 +459,36 @@ def test_api_run_not_found(tmp_path: Path) -> None:
         )
     finally:
         _stop_server(proc)
+
+
+# ---------------------------------------------------------------------------
+# Sub-Task 3: tool-call detail keys present in /api/results
+# ---------------------------------------------------------------------------
+
+def test_api_results_includes_tool_calls(server_url: str) -> None:
+    """GET /api/results must return records whose trace.tool_calls entries have
+    the required keys: name, params, result, provenance, guard_decision."""
+    status, body = _get(server_url + "/api/results")
+    assert status == 200, f"Expected 200 from GET /api/results, got {status}"
+    records = json.loads(body)
+    assert isinstance(records, list), "Expected JSON array from /api/results"
+
+    # Find the first record with a non-null trace containing tool_calls
+    trace_record = None
+    for rec in records:
+        trace = rec.get("trace")
+        if trace and trace.get("tool_calls"):
+            trace_record = rec
+            break
+
+    assert trace_record is not None, (
+        "Expected at least one record with a non-null trace and tool_calls"
+    )
+
+    tool_calls = trace_record["trace"]["tool_calls"]
+    required_keys = {"name", "params", "result", "provenance", "guard_decision"}
+    for i, tc in enumerate(tool_calls):
+        missing = required_keys - set(tc.keys())
+        assert not missing, (
+            f"tool_calls[{i}] is missing keys {missing}; got keys {set(tc.keys())}"
+        )

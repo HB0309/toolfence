@@ -115,6 +115,64 @@
     /* Loading state */
     .loading { color: #57606a; font-style: italic; }
     .error   { color: #991b1b; font-style: italic; }
+
+    /* Tool-call detail (replay cards) */
+    .tool-calls {
+      margin-top: 8px;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 6px;
+    }
+    .tool-call {
+      background: #f7f8fa;
+      border: 1px solid #e5e7eb;
+      border-radius: 3px;
+      padding: 6px 8px;
+      margin-bottom: 4px;
+      font-size: 0.78rem;
+    }
+    .tool-call:last-child { margin-bottom: 0; }
+    .tc-header { margin-bottom: 4px; }
+    .tool-call .tc-name {
+      font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
+      font-weight: 700;
+      font-size: 0.78rem;
+      color: #1f2328;
+    }
+    .tc-param { margin: 2px 0; }
+    .param-name {
+      font-weight: 600;
+      color: #57606a;
+      font-size: 0.75rem;
+    }
+    .param-value {
+      font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
+      font-size: 0.75rem;
+      word-break: break-all;
+    }
+    .tc-result {
+      font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
+      font-size: 0.75rem;
+      color: #57606a;
+      margin-top: 4px;
+      word-break: break-all;
+      overflow: hidden;
+    }
+    .tc-result-error { color: #991b1b; }
+    /* Provenance badges */
+    .badge.prov-user          { background: #d1fae5; color: #065f46; }
+    .badge.prov-first-party   { background: #dbeafe; color: #1e40af; }
+    .badge.prov-untrusted     { background: #fee2e2; color: #991b1b; }
+    /* Guard-decision badges */
+    .badge.guard-pass { background: #d1fae5; color: #065f46; }
+    .badge.guard-hold { background: #fef9c3; color: #854d0e; }
+    /* Canary highlight */
+    mark.canary-hit {
+      background: #fde68a;
+      color: #92400e;
+      border-radius: 2px;
+      padding: 0 2px;
+      font-weight: 700;
+    }
   </style>
 </head>
 <body>
