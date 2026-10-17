@@ -18,18 +18,20 @@
 // ---------------------------------------------------------------------------
 
 const VERDICT_COLORS = {
-  leaked:       '#D55E00',
-  held:         '#56B4E9',
-  refused:      '#009E73',
+  leaked:       '#FF6A2B',
+  held:         '#2FD4FF',
+  refused:      '#1EE8A5',
   inconclusive: '#8A8F98',
   skipped:      '#4B5058',
 };
 
 const GUARD_COLOR_OFF = '#9AA0A6';
-const GUARD_COLOR_ON  = '#56B4E9';
+const GUARD_COLOR_ON  = '#2FD4FF';
 
 /** Runs whose presence triggers the "default" view filter. */
-const DEFAULT_RUNS = new Set(['galaxium-granite', 'galaxium-llama70b', 'fs-granite', 'fs-llama70b']);
+// Run names that are excluded from the default view — everything else shows by default.
+const _EXCLUDED_RUNS = new Set(['full', 'narrowed', 'pg8-gate']);
+function _isDefaultRun(name) { return !_EXCLUDED_RUNS.has(name); }
 
 // ---------------------------------------------------------------------------
 // State
@@ -108,6 +110,8 @@ async function _fetchJson(url) {
 }
 
 async function loadData() {
+  const _strip = document.getElementById('kpi-strip');
+  if (_strip && !_strip.children.length) _strip.innerHTML = '<div class="tf-loading">Loading results…</div>';
   const runs = await _fetchJson('api/runs');
 
   if (runs.length > 0) {
@@ -129,7 +133,7 @@ async function loadData() {
   // Determine default run set
   const presentDefaultRuns = _allRecords
     .map(r => r._run)
-    .filter(r => DEFAULT_RUNS.has(r));
+    .filter(r => _isDefaultRun(r));
   window._hasDefaultRuns = new Set(presentDefaultRuns).size > 0;
 
   _populateSelects();
@@ -142,14 +146,14 @@ async function loadData() {
 // ---------------------------------------------------------------------------
 
 function _defaultRunNames() {
-  return [...new Set(_allRecords.map(r => r._run).filter(r => DEFAULT_RUNS.has(r)))];
+  return [...new Set(_allRecords.map(r => r._run).filter(r => _isDefaultRun(r)))];
 }
 
 function filtered() {
   return _allRecords.filter(rec => {
     if (state.run === 'default') {
       if (window._hasDefaultRuns) {
-        if (!DEFAULT_RUNS.has(rec._run)) return false;
+        if (!_isDefaultRun(rec._run)) return false;
       }
     } else if (state.run !== 'all') {
       if (rec._run !== state.run) return false;
@@ -302,21 +306,21 @@ function renderKpis() {
   const leaksOff = attackOffNonCtrl.filter(r => r.verdict === 'leaked').length;
   const kpi1 = { title: 'Leaks, Guard off',
     value: `${leaksOff}/${attackOffNonCtrl.length}`,
-    caption: 'leaked / attack trials (guard off)',
+    caption: 'agent copied untrusted data',
     color: leaksOff > 0 ? VERDICT_COLORS.leaked : undefined };
 
   // KPI 2: Leaks guard on
   const leaksOn = attackOnNonCtrl.filter(r => r.verdict === 'leaked').length;
   const kpi2 = { title: 'Leaks, Guard on',
     value: `${leaksOn}/${attackOnNonCtrl.length}`,
-    caption: 'leaked / attack trials (guard on)',
+    caption: 'same probes, Guard on',
     color: leaksOn > 0 ? VERDICT_COLORS.leaked : VERDICT_COLORS.refused };
 
   // KPI 3: Held by guard
   const held = attackOnNonCtrl.filter(r => r.verdict === 'held').length;
   const kpi3 = { title: 'Held by Guard',
     value: `${held}/${attackOnNonCtrl.length}`,
-    caption: 'held / attack trials (guard on)',
+    caption: 'stopped before it ran',
     color: VERDICT_COLORS.held };
 
   // KPI 4: Real tasks guard on
@@ -332,16 +336,16 @@ function renderKpis() {
   }
   const zeroLabels = Object.entries(labelMap)
     .filter(([, v]) => v.succ === 0 && v.total > 0)
-    .map(([lbl, v]) => `${lbl}: 0/${v.total}`);
+    .map(([lbl, v]) => `${lbl} 0/${v.total}`);
   const kpi4caption = zeroLabels.length
-    ? zeroLabels.join(', ')
-    : 'task_success / normal trials (guard on)';
+    ? `held by design: ${zeroLabels.join(', ')}`
+    : 'normal tasks completed';
   const kpi4 = { title: 'Real tasks, Guard on', value: kpi4val, caption: kpi4caption,
     color: VERDICT_COLORS.refused };
 
   // KPI 5: Cards shown
   const cards = recs.reduce((s, r) => s + (r.cards_shown ?? 0), 0);
-  const kpi5 = { title: 'Cards shown', value: String(cards), caption: 'sum of cards_shown' };
+  const kpi5 = { title: 'Approval cards', value: String(cards), caption: 'held calls a person would review' };
 
   // KPI 6: Inconclusive
   const incAttack = recs.filter(r => r.kind === 'attack' && r.verdict === 'inconclusive').length;
@@ -357,9 +361,9 @@ function renderKpis() {
     <div class="col-sm-6 col-lg-2">
       <div class="card kpi-card" title="${_esc(k.title)}">
         <div class="card-body">
-          <div class="kpi-value" style="${k.color ? `color:${k.color}` : ''}">${_esc(k.value)}</div>
-          <div class="kpi-caption">${_esc(k.title)}</div>
-          <div class="kpi-caption" style="opacity:0.7">${_esc(k.caption)}</div>
+          <div class="kpi-value" style="${k.color ? `color:${k.color};--glow:${k.color}` : ''}">${_esc(k.value)}</div>
+          <div class="kpi-title">${_esc(k.title)}</div>
+          <div class="kpi-sub" title="${_esc(k.caption)}">${_esc(k.caption)}</div>
         </div>
       </div>
     </div>`).join('');

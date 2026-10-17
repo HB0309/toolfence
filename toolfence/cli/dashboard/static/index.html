@@ -79,62 +79,64 @@
     <!-- -------------------------------------------------------- -->
     <!-- Charts row: Guard off vs on / Verdict mix               -->
     <!-- -------------------------------------------------------- -->
-    <div class="row row-cards mb-3">
-      <div class="col-lg-6">
-        <div class="card">
-          <div class="card-header"><h3 class="card-title">Guard off vs on</h3></div>
+    <div class="row g-2 mb-2">
+      <div class="col-lg-5">
+        <div class="card h-100">
+          <div class="card-header"><h3 class="card-title">Guard off vs on <span class="card-sub">leak rate per probe</span></h3></div>
           <div class="card-body">
-            <div id="chart-dumbbell" style="height:300px"></div>
+            <div id="chart-dumbbell" style="height:240px"></div>
           </div>
         </div>
       </div>
-      <div class="col-lg-6">
-        <div class="card">
-          <div class="card-header"><h3 class="card-title">Verdict mix</h3></div>
+      <div class="col-lg-7">
+        <div class="card h-100">
+          <div class="card-header"><h3 class="card-title">Where leaks happen <span class="card-sub">leaked k/n · click a cell to filter</span></h3></div>
           <div class="card-body">
-            <div id="chart-verdicts" style="height:300px"></div>
+            <div id="security-grid">
+              <div id="chart-heatmap" style="height:240px"></div>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- -------------------------------------------------------- -->
-    <!-- Security grid (S2: heatmap inside #security-grid)       -->
-    <!-- -------------------------------------------------------- -->
-    <div class="card mb-3">
-      <div class="card-header"><h3 class="card-title">Where leaks happen</h3></div>
-      <div class="card-body">
-        <!-- #security-grid contains #chart-heatmap in S2.
-             renderSecurityGrid() (app.js) now delegates to _renderHeatmap()
-             via renderCharts(); it keeps a non-empty fallback for zero trials. -->
-        <div id="security-grid">
-          <div id="chart-heatmap" style="height:280px"></div>
+    <div class="row g-2 mb-2">
+      <div class="col-lg-4">
+        <div class="card h-100 neon-card">
+          <div class="card-header"><h3 class="card-title">What happened to attacks <span class="card-sub">all attack trials</span></h3></div>
+          <div class="card-body">
+            <div id="chart-donuts" style="height:230px"></div>
+          </div>
         </div>
       </div>
-    </div>
-
-    <!-- -------------------------------------------------------- -->
-    <!-- Real tasks / Normal table                               -->
-    <!-- -------------------------------------------------------- -->
-    <div class="card mb-3">
-      <div class="card-header"><h3 class="card-title">Real tasks</h3></div>
-      <div class="card-body p-0">
-        <div class="table-responsive">
-          <table id="normal-table" class="table table-vcenter card-table">
-            <thead>
-              <tr>
-                <th>Task</th>
-                <th>Guard</th>
-                <th>Success</th>
-                <th>Failed</th>
-                <th>Undetermined</th>
-                <th>Run(s)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <!-- populated by app.js renderNormalTable() -->
-            </tbody>
-          </table>
+      <div class="col-lg-5">
+        <div class="card h-100">
+          <div class="card-header"><h3 class="card-title">Verdict mix <span class="card-sub">share of trials</span></h3></div>
+          <div class="card-body">
+            <div id="chart-verdicts" style="height:240px"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-3">
+        <div class="card h-100">
+          <div class="card-header"><h3 class="card-title">Real tasks <span class="card-sub">does work still get done?</span></h3></div>
+          <div class="card-body p-0">
+            <table id="normal-table" class="table table-sm table-vcenter card-table mb-0">
+              <thead>
+                <tr>
+                  <th>Task</th>
+                  <th>Guard</th>
+                  <th>Success</th>
+                  <th class="d-none">Failed</th>
+                  <th class="d-none">Undetermined</th>
+                  <th class="d-none">Run(s)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- populated by app.js renderNormalTable() -->
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
@@ -163,8 +165,8 @@
     <!-- -------------------------------------------------------- -->
     <!-- Footer / disclaimer + verdict legend                    -->
     <!-- -------------------------------------------------------- -->
-    <footer class="footer mt-3">
-      <div class="container-xl">
+    <footer class="tf-footer">
+      <div>
         <div class="text-muted" style="font-size:0.8rem">
           A clean result means the evaluation did not find a way through, not that none exists.
           &nbsp;|&nbsp;

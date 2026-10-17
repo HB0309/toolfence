@@ -22,7 +22,7 @@ import argparse
 import json
 import logging
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -248,7 +248,7 @@ def make_server(host: str, port: int, results_dir: Path) -> HTTPServer:
         (_DashboardHandler,),
         {"results_dir": results_dir},
     )
-    return HTTPServer((host, port), handler)
+    return ThreadingHTTPServer((host, port), handler)
 
 
 # ---------------------------------------------------------------------------

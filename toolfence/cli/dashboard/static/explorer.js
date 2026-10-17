@@ -208,11 +208,38 @@ function _openFlyout(rec) {
   // stash full record for Copy JSON
   window._flyoutRec = rec;
 
-  // open Bootstrap offcanvas
+  // open offcanvas — fall back to manual class + backdrop when bootstrap is unavailable
   const oc = document.getElementById('trial-flyout');
-  if (oc && window.bootstrap?.Offcanvas) {
-    bootstrap.Offcanvas.getOrCreateInstance(oc).show();
+  if (oc) {
+    if (window.bootstrap?.Offcanvas) {
+      bootstrap.Offcanvas.getOrCreateInstance(oc).show();
+    } else {
+      oc.classList.add('show');
+      let _bd = document.getElementById('_flyout-backdrop');
+      if (!_bd) {
+        _bd = document.createElement('div');
+        _bd.id = '_flyout-backdrop';
+        _bd.style.cssText =
+          'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1040;';
+        _bd.addEventListener('click', _closeFlyout);
+        document.body.appendChild(_bd);
+      }
+    }
   }
+}
+
+function _closeFlyout() {
+  const oc = document.getElementById('trial-flyout');
+  if (oc) {
+    if (window.bootstrap?.Offcanvas) {
+      const inst = bootstrap.Offcanvas.getInstance(oc);
+      if (inst) inst.hide();
+    } else {
+      oc.classList.remove('show');
+    }
+  }
+  const bd = document.getElementById('_flyout-backdrop');
+  if (bd) bd.remove();
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +255,18 @@ function _boolFormatter(cell) {
   if (v === true)  return '<span style="color:#009E73">yes</span>';
   if (v === false) return '<span style="color:#D55E00">no</span>';
   return '<span style="color:#8A8F98">—</span>';
+}
+
+function _canaryFormatter(cell) {
+  return cell.getValue()
+    ? '<span style="color:#FF6A2B;text-shadow:0 0 6px #FF6A2B">⚠ in args</span>'
+    : '<span style="color:#6E7681">—</span>';
+}
+
+function _guardFormatter(cell) {
+  return cell.getValue()
+    ? '<span class="badge" style="background:#2FD4FF;color:#04121A;box-shadow:0 0 8px #2FD4FF">on</span>'
+    : '<span class="badge" style="background:#3A3F47;color:#C9D1D9">off</span>';
 }
 
 function _buildTableData(recs) {
@@ -286,25 +325,22 @@ function renderExplorer() {
     theme:          'midnight',
     layout:         'fitColumns',
     pagination:     true,
-    paginationSize: 20,
-    height:         '420px',
-    rowClick: function(_e, row) {
-      _openFlyout(row.getData()._rec);
-    },
+    paginationSize: 12,
     columns: [
-      { title: 'Run',        field: 'run',          headerFilter: true,  width: 110 },
+      { title: 'Run',        field: 'run',          headerFilter: true,  width: 170 },
       { title: 'App',        field: 'app',          headerFilter: true,  width: 100 },
       { title: 'Model',      field: 'model',        headerFilter: true,  width: 130 },
       { title: 'Kind',       field: 'kind',         headerFilter: true,  width: 75  },
       { title: 'Probe/Task', field: 'label',        headerFilter: true,  widthGrow: 2 },
       { title: 'Defense',    field: 'defense',      headerFilter: true,  width: 110 },
-      { title: 'Guard',      field: 'guard',        formatter: _boolFormatter,   width: 70 },
+      { title: 'Guard',      field: 'guard',        formatter: _guardFormatter,  width: 85 },
       { title: 'Result',     field: 'result',       formatter: _resultFormatter, width: 110 },
-      { title: 'Held',       field: 'heldCalls',    width: 60  },
-      { title: 'Canary',     field: 'canaryInArgs', formatter: _boolFormatter,   width: 70 },
-      { title: 'Tokens',     field: 'tokens',       width: 75  },
+      { title: 'Held',       field: 'heldCalls',    width: 75, hozAlign: 'right' },
+      { title: 'Canary',     field: 'canaryInArgs', formatter: _canaryFormatter, width: 100 },
+      { title: 'Tokens',     field: 'tokens',       width: 90, hozAlign: 'right' },
     ],
   });
+  _tabulatorTable.on('rowClick', (_e, row) => _openFlyout(row.getData()._rec));
 }
 
 // ---------------------------------------------------------------------------
@@ -356,12 +392,13 @@ function _replayStep() {
           ? `<span style="color:${VERDICT_COLORS.held};font-weight:bold;margin-left:4px">HOLD</span>`
           : '';
 
-        // All args as key=value pairs
+        // All args as key=value pairs with provenance badges
         const args = tc.args ?? tc.params ?? {};
+        const prov = tc.provenance ?? {};
         const argPairs = Object.entries(args)
           .map(([k, v]) => {
             const vs = String(v ?? '');
-            return `<div style="margin-left:8px"><span style="color:#8A8F98">${_esc(k)}</span>=<span style="color:#C9D1D9">${_esc(vs)}</span></div>`;
+            return `<div style="margin-left:8px"><span style="color:#8A8F98">${_esc(k)}</span>=<span style="color:#C9D1D9">${_esc(vs)}</span>${_provBadge(prov[k])}</div>`;
           }).join('');
 
         // Full result — use <details> so it's always accessible
@@ -527,6 +564,14 @@ function _replayStartOrResume(fromBeginning) {
 // ---------------------------------------------------------------------------
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Wire close button for the fallback (non-bootstrap) offcanvas path
+  const closeBtn = document.querySelector('#trial-flyout .btn-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      if (!window.bootstrap?.Offcanvas) _closeFlyout();
+    });
+  }
+
   const btn = document.getElementById('replay-btn');
   if (!btn) return;
 

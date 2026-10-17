@@ -265,3 +265,27 @@ def test_dashboard_replay_shows_tool_calls(dashboard_url: str) -> None:
         )
 
         browser.close()
+
+
+# ---------------------------------------------------------------------------
+# Donuts chart — canvas render test
+# ---------------------------------------------------------------------------
+
+def test_chart_donuts_renders_canvas(dashboard_url: str) -> None:
+    """#chart-donuts must contain a <canvas> element after the page loads (ECharts renders one)."""
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.goto(dashboard_url)
+        page.wait_for_load_state("networkidle")
+
+        donuts_div = page.query_selector("#chart-donuts")
+        assert donuts_div is not None, "#chart-donuts container not found in DOM"
+
+        canvas = donuts_div.query_selector("canvas")
+        assert canvas is not None, (
+            "#chart-donuts must contain a <canvas> element after load; "
+            "ECharts did not initialise the donut chart"
+        )
+
+        browser.close()

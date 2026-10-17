@@ -391,3 +391,20 @@ def test_replay_js_not_in_html() -> None:
     assert not replay_srcs, (
         f"index.html must not load replay.js; found: {replay_srcs}"
     )
+
+
+# ===========================================================================
+# Donuts chart — static tests
+# ===========================================================================
+
+def test_chart_donuts_id_in_html() -> None:
+    """index.html must contain id="chart-donuts"."""
+    assert _INDEX.exists(), f"Expected {_INDEX} to exist"
+    html = _INDEX.read_text(encoding="utf-8")
+    assert 'id="chart-donuts"' in html, 'index.html must contain id="chart-donuts"'
+
+
+def test_charts_js_references_chart_donuts() -> None:
+    """charts.js must reference the ID chart-donuts."""
+    src = (_STATIC_DIR / "charts.js").read_text(encoding="utf-8")
+    assert "chart-donuts" in src, "charts.js must reference the ID 'chart-donuts'"

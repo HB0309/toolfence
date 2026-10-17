@@ -59,6 +59,19 @@ const _AXIS_STYLE = {
  * #chart-dumbbell — Guard off vs on (leak rate per probe)
  * ------------------------------------------------------------------------- */
 
+/* Short display names: "taint-flow-tool-result-001" → "taint-flow", "llama-3.3-70b-instruct" → "Llama 70B" */
+function _shortProbe(p) {
+  const s = String(p);
+  if (s.startsWith('taint-flow')) return 'taint-flow';
+  return s.replace(/-tool-result-\d+$/, ' · tool result').replace(/-user-input-\d+$/, ' · user msg').replace(/-\d+$/, '');
+}
+function _shortModel(m) {
+  const s = String(m).toLowerCase();
+  if (s.includes('llama')) return 'Llama 70B';
+  if (s.includes('granite')) return 'Granite 8B';
+  return m;
+}
+
 function _renderDumbbell(recs) {
   const chart = _getOrInitChart('chart-dumbbell');
   if (!chart) return;
@@ -80,11 +93,13 @@ function _renderDumbbell(recs) {
   const multiModel = models.length > 1;
 
   // Build row keys
+  // Controls (user-typed canary) are not a Guard test — leave them to the verdict chart.
   const rowSet = new Set();
   for (const r of attack) {
+    if (r._isControl) continue;
     rowSet.add(multiModel ? `${r._label} / ${r._model}` : r._label);
   }
-  const rows = [...rowSet].sort();
+  const rows = [...rowSet].sort().reverse();
 
   // For each row, compute leak rate for guard_on=false and guard_on=true
   function _rowStats(row) {
@@ -104,21 +119,22 @@ function _renderDumbbell(recs) {
   const stats   = rows.map(_rowStats);
   const offData = stats.map(s => s.off.rate);
   const onData  = stats.map(s => s.on.rate);
-  const labels  = rows.map((row, i) => {
-    const s = stats[i];
-    return s.isControl ? row + ' (control)' : row;
+  const labels  = rows.map((row) => {
+    const [probe, model] = row.split(' / ');
+    return model ? `${_shortProbe(probe)} · ${_shortModel(model)}` : _shortProbe(probe);
   });
 
   const MUTED = '#6E7681';
-  const COLOR_OFF = '#D55E00';
-  const COLOR_ON  = '#56B4E9';
+  const COLOR_OFF = VERDICT_COLORS.leaked;
+  const COLOR_ON  = VERDICT_COLORS.held;
 
   // Build connecting line series (one per row)
   const lineSeries = rows.map((_, i) => ({
     type: 'line',
     data: [[offData[i], i], [onData[i], i]],
     coordinateSystem: 'cartesian2d',
-    lineStyle: { color: stats[i].isControl ? MUTED : _TEXT_COLOR, width: 1, type: 'solid' },
+    lineStyle: { color: stats[i].isControl ? MUTED : 'rgba(201,209,217,0.45)', width: 2, type: 'solid',
+      shadowBlur: 6, shadowColor: 'rgba(47,212,255,0.35)' },
     symbol: 'none',
     silent: true,
     z: 1,
@@ -127,20 +143,23 @@ function _renderDumbbell(recs) {
   const scatterOff = {
     name: 'Guard off',
     type: 'scatter',
-    symbolSize: 10,
-    itemStyle: { color: (params) => stats[params.dataIndex].isControl ? MUTED : COLOR_OFF },
+    color: COLOR_OFF,
+    symbolSize: 12,
+    itemStyle: { color: (params) => stats[params.dataIndex].isControl ? MUTED : COLOR_OFF,
+      shadowBlur: 14, shadowColor: COLOR_OFF },
     data: rows.map((_, i) => ({
       value: [offData[i], i],
       label: {
         show: true,
-        position: 'insideLeft',
+        position: 'top',
         formatter: () => {
-          const s = stats[i].off;
-          return s.n === 0 ? '' : `${s.k}/${s.n}`;
+          const s = stats[i].off, o = stats[i].on;
+          if (s.n === 0 || (s.k === 0 && o.k === 0)) return '';
+          return `off ${s.k}/${s.n}`;
         },
-        color: _TEXT_COLOR,
-        fontSize: 11,
-        distance: 8,
+        color: COLOR_OFF,
+        fontSize: 10,
+        distance: 3,
       },
     })),
     tooltip: {
@@ -157,20 +176,24 @@ function _renderDumbbell(recs) {
   const scatterOn = {
     name: 'Guard on',
     type: 'scatter',
-    symbolSize: 10,
-    itemStyle: { color: (params) => stats[params.dataIndex].isControl ? MUTED : COLOR_ON },
+    color: COLOR_ON,
+    symbolSize: 12,
+    itemStyle: { color: (params) => stats[params.dataIndex].isControl ? MUTED : COLOR_ON,
+      shadowBlur: 14, shadowColor: COLOR_ON },
     data: rows.map((_, i) => ({
       value: [onData[i], i],
       label: {
         show: true,
-        position: 'insideRight',
         formatter: () => {
-          const s = stats[i].on;
-          return s.n === 0 ? '' : `${s.k}/${s.n}`;
+          const s = stats[i].on, f = stats[i].off;
+          if (s.n === 0) return '';
+          if (s.k === 0 && f.k === 0) return `no leaks · ${f.n + s.n} trials`;
+          return `on ${s.k}/${s.n}`;
         },
-        color: _TEXT_COLOR,
-        fontSize: 11,
-        distance: 8,
+        position: (stats[i].on.k === 0 && stats[i].off.k === 0) ? 'right' : 'bottom',
+        color: COLOR_ON,
+        fontSize: 10,
+        distance: 6,
       },
     })),
     tooltip: {
@@ -184,22 +207,24 @@ function _renderDumbbell(recs) {
     z: 2,
   };
 
-  const height = Math.max(300, rows.length * 36 + 80);
+  const height = Math.max(200, rows.length * 40 + 60);
   chart.getDom().style.height = height + 'px';
   chart.resize();
 
   chart.setOption({
     backgroundColor: _BG_TRANSPARENT,
     tooltip: _TOOLTIP_STYLE,
-    legend: { data: ['Guard off', 'Guard on'], textStyle: { color: _TEXT_COLOR }, top: 4 },
-    grid: { left: '3%', right: '6%', top: 36, bottom: 30, containLabel: true },
-    xAxis: { type: 'value', min: 0, max: 100, name: 'Leak rate %',
-      nameTextStyle: { color: _TEXT_COLOR }, ..._AXIS_STYLE },
+    legend: { data: ['Guard off', 'Guard on'], textStyle: { color: _TEXT_COLOR, fontSize: 11 }, top: 0, right: 0, itemWidth: 10, itemHeight: 10 },
+    grid: { left: 8, right: 24, top: 26, bottom: 22, containLabel: true },
+    xAxis: { type: 'value', min: 0, max: 100,
+      axisLabel: { color: _TEXT_COLOR, fontSize: 10, formatter: '{value}%' },
+      axisLine: { lineStyle: { color: _AXIS_LINE_COLOR } },
+      splitLine: { lineStyle: { color: _AXIS_LINE_COLOR } } },
     yAxis: { type: 'category', data: labels, inverse: false,
       axisLabel: { color: (v, i) => stats[i] && stats[i].isControl ? MUTED : _TEXT_COLOR, fontSize: 12 },
       ..._AXIS_STYLE },
     series: [...lineSeries, scatterOff, scatterOn],
-  }, true);
+  }, { notMerge: true });
 }
 
 /* -------------------------------------------------------------------------
@@ -230,45 +255,57 @@ function _renderVerdicts(recs) {
     if (!rowMap[key]) { rowMap[key] = []; rowKeys.push(key); }
     rowMap[key].push(r);
   }
-  rowKeys.sort();
+  rowKeys.sort().reverse();
+  const rowLabels = rowKeys.map(k => {
+    const [probe, g] = k.split(' | ');
+    return `${_shortProbe(probe)} · Guard ${g}`;
+  });
 
-  const verdicts = Object.keys(VERDICT_COLORS);
+  // Only verdicts that actually occur get a legend entry; bars are % of trials (counts in tooltip/label).
+  const verdicts = Object.keys(VERDICT_COLORS).filter(v => attack.some(r => r.verdict === v));
   const series = verdicts.map(v => ({
     name: v,
     type: 'bar',
     stack: 'total',
-    barMaxWidth: 28,
-    itemStyle: { color: VERDICT_COLORS[v] },
+    barMaxWidth: 16,
+    itemStyle: { color: VERDICT_COLORS[v], shadowBlur: v === 'leaked' ? 8 : 0, shadowColor: VERDICT_COLORS[v] + '88', borderRadius: 2, opacity: 0.9 },
     label: {
       show: true,
-      formatter: (p) => p.value > 0 ? String(p.value) : '',
-      color: '#fff',
-      fontSize: 11,
-    },
-    data: rowKeys.map(key => rowMap[key].filter(r => r.verdict === v).length),
-    tooltip: {
-      trigger: 'item',
       formatter: (p) => {
         const n = rowMap[rowKeys[p.dataIndex]].length;
-        return `${rowKeys[p.dataIndex]}<br/>${v}: ${p.value}/${n}`;
+        const k = rowMap[rowKeys[p.dataIndex]].filter(r => r.verdict === v).length;
+        return k > 0 ? `${k}/${n}` : '';
       },
-      ...Object.fromEntries(Object.entries(_TOOLTIP_STYLE).filter(([k]) => k !== 'trigger')),
+      color: '#fff',
+      fontSize: 10,
     },
+    data: rowKeys.map(key => {
+      const n = rowMap[key].length;
+      return n ? (rowMap[key].filter(r => r.verdict === v).length / n) * 100 : 0;
+    }),
   }));
 
-  const height = Math.max(300, rowKeys.length * 32 + 80);
+  const height = Math.max(200, rowKeys.length * 22 + 50);
   chart.getDom().style.height = height + 'px';
   chart.resize();
 
   chart.setOption({
     backgroundColor: _BG_TRANSPARENT,
-    tooltip: { ..._TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' } },
-    legend: { data: verdicts, textStyle: { color: _TEXT_COLOR }, top: 4 },
-    grid: { left: '3%', right: '6%', top: 36, bottom: 30, containLabel: true },
-    xAxis: { type: 'value', ..._AXIS_STYLE },
-    yAxis: { type: 'category', data: rowKeys, inverse: false, ..._AXIS_STYLE },
+    tooltip: { ..._TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' },
+      formatter: (ps) => {
+        const key = rowKeys[ps[0].dataIndex];
+        const n = rowMap[key].length;
+        return `${rowLabels[ps[0].dataIndex]}<br/>` + ps.filter(p => p.value > 0).map(p =>
+          `${p.marker}${p.seriesName}: ${rowMap[key].filter(r => r.verdict === p.seriesName).length}/${n}`).join('<br/>');
+      } },
+    legend: { data: verdicts, textStyle: { color: _TEXT_COLOR, fontSize: 11 }, top: 0, right: 0, itemWidth: 10, itemHeight: 10 },
+    grid: { left: 8, right: 16, top: 24, bottom: 20, containLabel: true },
+    xAxis: { type: 'value', max: 100, axisLabel: { color: _TEXT_COLOR, fontSize: 10, formatter: '{value}%' },
+      axisLine: { lineStyle: { color: _AXIS_LINE_COLOR } }, splitLine: { lineStyle: { color: _AXIS_LINE_COLOR } } },
+    yAxis: { type: 'category', data: rowLabels, inverse: false,
+      axisLabel: { color: _TEXT_COLOR, fontSize: 11 }, axisLine: { lineStyle: { color: _AXIS_LINE_COLOR } } },
     series,
-  }, true);
+  }, { notMerge: true });
 }
 
 /* -------------------------------------------------------------------------
@@ -356,7 +393,7 @@ function _renderHeatmap(recs) {
     }
   }
 
-  const height = Math.max(280, probes.length * 38 + 100);
+  const height = Math.max(200, probes.length * 34 + 60);
   heatmapEl.style.height = height + 'px';
 
   const chart = _getOrInitChart('chart-heatmap');
@@ -380,30 +417,26 @@ function _renderHeatmap(recs) {
       borderColor: _AXIS_LINE_COLOR,
       textStyle: { color: _TEXT_COLOR },
     },
-    grid: { left: '3%', right: '120px', top: 20, bottom: 60, containLabel: true },
+    grid: { left: 8, right: 8, top: 4, bottom: 4, containLabel: true },
     xAxis: {
       type: 'category',
-      data: _HEATMAP_COLS.map(c => c.label),
-      axisLabel: { rotate: 30, color: _TEXT_COLOR, fontSize: 11 },
-      axisLine: { lineStyle: { color: _AXIS_LINE_COLOR } },
-      splitArea: { show: true },
+      position: 'top',
+      data: _HEATMAP_COLS.map(c => c.label.replace('instructional', 'instruct.').replace('datamarking', 'datamark').replace('·', ' · Guard ')),
+      axisLabel: { color: _TEXT_COLOR, fontSize: 10, interval: 0 },
+      axisLine: { show: false }, axisTick: { show: false },
     },
     yAxis: {
       type: 'category',
-      data: probes,
-      axisLabel: { color: _TEXT_COLOR, fontSize: 12 },
-      axisLine: { lineStyle: { color: _AXIS_LINE_COLOR } },
-      splitArea: { show: true },
+      data: probes.map(_shortProbe),
+      inverse: true,
+      axisLabel: { color: _TEXT_COLOR, fontSize: 11 },
+      axisLine: { show: false }, axisTick: { show: false },
     },
     visualMap: {
+      show: false,
       min: 0,
       max: Math.max(maxVal, 1),
-      calculable: false,
-      orient: 'vertical',
-      right: 0,
-      top: 'center',
-      inRange: { color: ['#1F2A37', '#D55E00'] },
-      textStyle: { color: _TEXT_COLOR },
+      inRange: { color: ['#1A2433', VERDICT_COLORS.leaked] },
     },
     series: [{
       name: 'Leaks',
@@ -411,13 +444,13 @@ function _renderHeatmap(recs) {
       data: cellData.map(d => ({
         value: d.value,
         // null values get gray styling via itemStyle
-        itemStyle: d.total === 0 ? { color: '#2D333B' } : {},
+        itemStyle: d.total === 0 ? { color: '#161B22', borderColor: '#0D1117', borderWidth: 2 } : { borderColor: '#0D1117', borderWidth: 2 },
         label: { show: true, formatter: () => d.label_, color: _TEXT_COLOR, fontSize: 11 },
       })),
       label: { show: true },
-      emphasis: { itemStyle: { shadowBlur: 6, shadowColor: 'rgba(0,0,0,0.5)' } },
+      emphasis: { itemStyle: { shadowBlur: 16, shadowColor: VERDICT_COLORS.leaked } },
     }],
-  }, true);
+  }, { notMerge: true });
 
   // Click a cell → filter by probe, defense, guard
   chart.off('click');
@@ -436,6 +469,61 @@ function _renderHeatmap(recs) {
   });
 }
 
+
+/* -------------------------------------------------------------------------
+ * #chart-donuts — attack outcomes, Guard off vs Guard on (part-to-whole)
+ * ------------------------------------------------------------------------- */
+
+function _renderDonuts(recs) {
+  const chart = _getOrInitChart('chart-donuts');
+  if (!chart) return;
+  const attack = recs.filter(r => r.kind === 'attack' && !r._isControl);
+  const sides = [
+    { name: 'Guard off', recs: attack.filter(r => !r.guard_on), center: '25%' },
+    { name: 'Guard on',  recs: attack.filter(r => r.guard_on),  center: '75%' },
+  ];
+  const verdicts = Object.keys(VERDICT_COLORS).filter(v => attack.some(r => r.verdict === v));
+
+  const series = sides.map(side => {
+    const n = side.recs.length;
+    const leaked = side.recs.filter(r => r.verdict === 'leaked').length;
+    const main = n === 0 ? '–' : `${Math.round((leaked / n) * 100)}%`;
+    return {
+      name: side.name,
+      type: 'pie',
+      radius: ['58%', '78%'],
+      center: [side.center, '52%'],
+      padAngle: 3,
+      itemStyle: { borderRadius: 4 },
+      avoidLabelOverlap: true,
+      label: {
+        show: true, position: 'center',
+        formatter: () => `{v|${main}}\n{s|leaked}\n{t|${side.name} · ${leaked}/${n}}`,
+        rich: {
+          v: { fontSize: 22, fontWeight: 700, color: leaked > 0 ? VERDICT_COLORS.leaked : VERDICT_COLORS.refused,
+               textShadowBlur: 12, textShadowColor: leaked > 0 ? VERDICT_COLORS.leaked : VERDICT_COLORS.refused },
+          s: { fontSize: 10, color: '#8B949E', padding: [2, 0, 4, 0] },
+          t: { fontSize: 10, color: _TEXT_COLOR },
+        },
+      },
+      labelLine: { show: false },
+      emphasis: { scale: true, scaleSize: 4, label: { show: true } },
+      data: verdicts.map(v => ({
+        name: v,
+        value: side.recs.filter(r => r.verdict === v).length,
+        itemStyle: { color: VERDICT_COLORS[v], shadowBlur: 18, shadowColor: VERDICT_COLORS[v] },
+      })).filter(d => d.value > 0),
+    };
+  });
+
+  chart.setOption({
+    backgroundColor: _BG_TRANSPARENT,
+    tooltip: { ..._TOOLTIP_STYLE, formatter: (p) => `${p.seriesName}<br/>${p.marker}${p.name}: ${p.value} (${p.percent}%)` },
+    legend: { data: verdicts, bottom: 0, textStyle: { color: _TEXT_COLOR, fontSize: 11 }, itemWidth: 10, itemHeight: 10, icon: 'circle' },
+    series,
+  }, { notMerge: true });
+}
+
 /* -------------------------------------------------------------------------
  * renderCharts — public entry point, called from app.js renderAll()
  * ------------------------------------------------------------------------- */
@@ -443,6 +531,7 @@ function _renderHeatmap(recs) {
 function renderCharts() {
   const recs = filtered();
   _renderDumbbell(recs);
+  _renderDonuts(recs);
   _renderVerdicts(recs);
   _renderHeatmap(recs);
 }

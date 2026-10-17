@@ -82,13 +82,10 @@ def install_guard(
        The patch also silently drops re-registration of ``spawn``/``exec``.
     """
     log.info("install_guard: installing Guard on registry (guard_on=%s, datamark_on=%s)", guard_on, datamark_on)
-    # Step 1 — remove forbidden tools.
-    for name in list(_FORBIDDEN_TOOL_NAMES):
-        try:
-            registry.unregister(name)
-            log.info("install_guard: removed forbidden tool %r", name)
-        except Exception:  # noqa: BLE001
-            log.debug("install_guard: tool %r not present, nothing to remove", name)
+    # Step 1 — remove forbidden tools (fail-closed: no try/except).
+    for name in _FORBIDDEN_TOOL_NAMES:
+        registry.unregister(name)
+        log.info("install_guard: removed forbidden tool %r", name)
 
     # Step 2 — wrap every current unwrapped tool in-place.
     def _make_proxy(tool: Any) -> GuardedProxy:
