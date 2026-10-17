@@ -68,7 +68,8 @@ from toolfence.guard.taint import SessionTaint
 log = logging.getLogger(__name__)
 
 # Sentinel returned to the caller when a tool call is held for confirmation.
-_HOLD_SENTINEL = "paused — needs your confirmation"
+# Instructs the model not to retry the call or report success prematurely.
+_HOLD_SENTINEL = "Paused by ToolFence: this action was NOT performed. It is waiting for the user's approval. Do not retry it, and do not tell the user it succeeded; tell them it is waiting for their approval."
 # Sentinel returned when await_decision was provided and the user declined.
 _DECLINE_SENTINEL = "Declined by the user. This action was not performed. Do not retry it."
 
