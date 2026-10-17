@@ -1,0 +1,41 @@
+{
+  "agents": {
+    "defaults": {
+      "model": "ibm-granite/granite-4.2-8b",
+      "provider": "openrouter",
+      "dream": { "enabled": false },
+      "maxToolIterations": 15,
+      "providerRetryMode": "persistent"
+    }
+  },
+  "providers": {
+    "openrouter": {
+      "apiKey": "${OPENROUTER_API_KEY}",
+      "extraBody": {
+        "provider": {
+          "order": ["DeepInfra", "CoreWeave"],
+          "allow_fallbacks": false
+        },
+        "reasoning": { "effort": "none" }
+      }
+    }
+  },
+  "tools": {
+    "exec":    { "enable": false },
+    "web":     { "enable": false },
+    "file":    { "enable": false },
+    "cliApps": { "enable": false },
+    "my":      { "enable": false },
+    "mcpServers": {
+      "filesystem": {
+        "type": "stdio",
+        "command": "npx.cmd",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "WORKDIR_PLACEHOLDER"
+        ]
+      }
+    }
+  }
+}

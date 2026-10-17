@@ -4,10 +4,11 @@ Run once (or whenever a model changes) and commit the output:
 
     python scripts/generate_schemas.py
 
-The three files written are:
+The four files written are:
     toolfence/contracts/schemas/surface.schema.json
     toolfence/contracts/schemas/trace.schema.json
     toolfence/contracts/schemas/trial.schema.json
+    toolfence/contracts/schemas/profile.schema.json
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from pathlib import Path
 # Make sure the package is importable when run from the repo root.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from toolfence.contracts.profile import TargetProfile
 from toolfence.contracts.surface import SurfaceFile
 from toolfence.contracts.trace import Trace
 from toolfence.contracts.trial import TrialRecord
@@ -27,9 +29,10 @@ SCHEMAS_DIR = Path(__file__).parent.parent / "toolfence" / "contracts" / "schema
 SCHEMAS_DIR.mkdir(parents=True, exist_ok=True)
 
 _TARGETS = [
-    (SurfaceFile, "surface.schema.json"),
-    (Trace,       "trace.schema.json"),
-    (TrialRecord, "trial.schema.json"),
+    (SurfaceFile,   "surface.schema.json"),
+    (Trace,         "trace.schema.json"),
+    (TrialRecord,   "trial.schema.json"),
+    (TargetProfile, "profile.schema.json"),
 ]
 
 

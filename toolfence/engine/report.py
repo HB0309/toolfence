@@ -42,6 +42,10 @@ def render_report(summary: ResultSummary) -> str:
     lines.append("")
     lines.append(f"**Run ID:** `{summary.run_id}`")
     lines.append(f"**Total trials:** {summary.total_trials}")
+    if summary.model:
+        lines.append(f"**Model:** `{summary.model}`")
+    if summary.host:
+        lines.append(f"**Host:** {summary.host}")
     lines.append("")
 
     # ------------------------------------------------------------------
@@ -77,12 +81,13 @@ def render_report(summary: ResultSummary) -> str:
     if summary.normal_conditions:
         lines.append("### Normal-Task Results by Condition")
         lines.append("")
-        lines.append("| Defense | Guard | Success | Failed | Undetermined | Skipped | Total | Success% |")
-        lines.append("|---------|-------|--------:|-------:|-------------:|--------:|------:|---------:|")
+        lines.append("| Task | Defense | Guard | Success | Failed | Undetermined | Skipped | Total | Success% |")
+        lines.append("|------|---------|-------|--------:|-------:|-------------:|--------:|------:|---------:|")
         for nc in summary.normal_conditions:
             guard_label = "✓" if nc.guard_on else "✗"
+            task_label = nc.task_label or "—"
             lines.append(
-                f"| {nc.defense} | {guard_label} | "
+                f"| {task_label} | {nc.defense} | {guard_label} | "
                 f"{nc.success} | {nc.failed} | {nc.undetermined} | {nc.skipped} | {nc.total} | {nc.success_pct}% |"
             )
         lines.append("")
@@ -97,28 +102,40 @@ def render_report(summary: ResultSummary) -> str:
         lines.append("*No attack trials recorded.*")
     else:
         lines.append(
-            "| Channel | Defense | Guard | "
+            "| Channel | Probe | Defense | Guard | "
             "Leaked | Held | Refused | Inconclusive | Skipped | Total | "
-            "Leaked% | Held% | Refused% | Inconclusive% | Cards Shown |"
+            "Leaked% | Held% | Refused% | Inconclusive% | Cards Shown | Canary-in-args held |"
         )
         lines.append(
-            "|---------|---------|-------|"
+            "|---------|-------|---------|-------|"
             "-------:|-----:|--------:|-------------:|--------:|------:|"
-            "--------:|------:|---------:|-------------:|------------:|"
+            "--------:|------:|---------:|-------------:|------------:|--------------------:|"
         )
         for cond in summary.conditions:
             a = cond.attack
             guard_label = "✓" if cond.guard_on else "✗"
             channel_label = cond.channel or "—"
+            probe_label = cond.probe_id or "—"
             lines.append(
-                f"| {channel_label} | {cond.defense} | {guard_label} | "
+                f"| {channel_label} | {probe_label} | {cond.defense} | {guard_label} | "
                 f"{a.leaked} | {a.held} | {a.refused} | {a.inconclusive} | "
                 f"{a.skipped} | {a.total} | "
                 f"{a.leaked_pct}% | {a.held_pct}% | {a.refused_pct}% | "
-                f"{a.inconclusive_pct}% | {cond.cards_shown} |"
+                f"{a.inconclusive_pct}% | {cond.cards_shown} | {a.canary_in_args_held} |"
             )
 
     lines.append("")
+
+    # Note for user-input probes — Guard-on "leaked" is the expected control
+    # result for this channel because the canary is in the user's own message.
+    if any(c.channel == "user-input" for c in summary.conditions):
+        lines.append(
+            "> **Note (user-input probes):** here the canary is in the user's own message. "
+            "Guard passes values the user typed, by design, so *leaked* with Guard on is "
+            "the expected control result: Guard doesn't block what the user asked for. "
+            "The tool-result rows are where Guard is tested."
+        )
+        lines.append("")
 
     # ------------------------------------------------------------------
     # Cards shown summary (separate section for quick scan)
@@ -131,9 +148,10 @@ def render_report(summary: ResultSummary) -> str:
         lines.append("")
         for cond in summary.conditions:
             channel_label = cond.channel or "—"
+            probe_label = cond.probe_id or "—"
             guard_label = "on" if cond.guard_on else "off"
             lines.append(
-                f"- {channel_label} / {cond.defense} / guard {guard_label}: "
+                f"- {channel_label} / {probe_label} / {cond.defense} / guard {guard_label}: "
                 f"{cond.cards_shown} card(s)"
             )
         lines.append("")

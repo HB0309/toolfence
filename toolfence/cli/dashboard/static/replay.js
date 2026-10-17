@@ -57,6 +57,7 @@ function buildSecurityGrid(conditions) {
     <table id="security-table">
       <thead><tr>
         <th>Channel</th>
+        <th>Probe</th>
         <th>Defense</th>
         <th>Guard</th>
         <th class="num">Leaked</th>
@@ -70,6 +71,7 @@ function buildSecurityGrid(conditions) {
         <th class="num">Refused%</th>
         <th class="num">Inconclusive%</th>
         <th class="num">Cards Shown</th>
+        <th class="num">Canary-in-args held</th>
       </tr></thead>
       <tbody>`;
 
@@ -78,6 +80,7 @@ function buildSecurityGrid(conditions) {
     const total = a.total || 0;
     return `<tr>
       <td>${esc(c.channel)}</td>
+      <td>${esc(c.probe_id)}</td>
       <td>${esc(c.defense)}</td>
       <td>${guardBadge(c.guard_on)}</td>
       <td class="num">${a.leaked}</td>
@@ -91,6 +94,7 @@ function buildSecurityGrid(conditions) {
       <td class="num">${a.refused_pct}%</td>
       <td class="num">${a.inconclusive_pct}%</td>
       <td class="num">${c.cards_shown}</td>
+      <td class="num">${a.canary_in_args_held ?? 0}</td>
     </tr>`;
   }).join("");
 
@@ -109,22 +113,26 @@ function buildNormalGrid(normalConditions, normalTasks) {
   let html = `
     <table id="normal-table">
       <thead><tr>
+        <th>Task</th>
         <th>Defense</th>
         <th>Guard</th>
         <th class="num">Success</th>
         <th class="num">Failed</th>
         <th class="num">Skipped</th>
+        <th class="num">Undetermined</th>
         <th class="num">Total</th>
         <th class="num">Success%</th>
       </tr></thead>
       <tbody>`;
 
   html += normalConditions.map(nc => `<tr>
+    <td>${esc(nc.task_label)}</td>
     <td>${esc(nc.defense)}</td>
     <td>${guardBadge(nc.guard_on)}</td>
     <td class="num">${nc.success}</td>
     <td class="num">${nc.failed}</td>
     <td class="num">${nc.skipped}</td>
+    <td class="num">${nc.undetermined}</td>
     <td class="num">${nc.total}</td>
     <td class="num">${nc.success_pct}%</td>
   </tr>`).join("");
@@ -134,9 +142,58 @@ function buildNormalGrid(normalConditions, normalTasks) {
   if (normalTasks) {
     html += `<p style="font-size:0.8rem;color:#57606a;margin-top:4px">
       Aggregate — Success: ${normalTasks.success} / ${normalTasks.total}
-      (${normalTasks.success_pct}%)
+      (${normalTasks.success_pct}%) &nbsp;·&nbsp;
+      Undetermined: ${normalTasks.undetermined}
     </p>`;
   }
+  return html;
+}
+
+// ---------------------------------------------------------------------------
+// Run comparison table — one row per run folder from /api/runs
+// ---------------------------------------------------------------------------
+
+function buildRunComparisonTable(runsData) {
+  // runsData: [{name, summary}, ...]
+  if (!runsData || runsData.length === 0) {
+    return "";
+  }
+
+  let html = `
+    <h2>Run Comparison</h2>
+    <table id="run-comparison-table">
+      <thead><tr>
+        <th>Run</th>
+        <th class="num">Leaked</th>
+        <th class="num">Refused</th>
+        <th class="num">Held</th>
+        <th class="num">Normal success %</th>
+        <th class="num">Cards shown</th>
+      </tr></thead>
+      <tbody>`;
+
+  for (const { name, summary } of runsData) {
+    const conditions = summary.conditions || [];
+    let leaked = 0, refused = 0, held = 0, cardsShown = 0;
+    for (const c of conditions) {
+      leaked     += (c.attack && c.attack.leaked)   || 0;
+      refused    += (c.attack && c.attack.refused)  || 0;
+      held       += (c.attack && c.attack.held)     || 0;
+      cardsShown += c.cards_shown                   || 0;
+    }
+    const nt = summary.normal_tasks;
+    const normalPct = nt ? nt.success_pct + "%" : "—";
+    html += `<tr>
+      <td>${esc(name)}</td>
+      <td class="num">${leaked}</td>
+      <td class="num">${refused}</td>
+      <td class="num">${held}</td>
+      <td class="num">${normalPct}</td>
+      <td class="num">${cardsShown}</td>
+    </tr>`;
+  }
+
+  html += "</tbody></table>";
   return html;
 }
 
@@ -279,11 +336,11 @@ function initReplay(records) {
 // Bootstrap — fetch data and render
 // ---------------------------------------------------------------------------
 
-async function bootstrap() {
-  // Fetch summary for grids
+async function _renderGrids(summaryUrl, resultsUrl) {
+  // Fetch summary for security + normal grids
   let summary = null;
   try {
-    const resp = await fetch("/api/summary");
+    const resp = await fetch(summaryUrl);
     summary = await resp.json();
   } catch (e) {
     document.getElementById("security-loading").className = "error";
@@ -305,7 +362,7 @@ async function bootstrap() {
   // Fetch raw records for trend + replay
   let records = [];
   try {
-    const resp = await fetch("/api/results");
+    const resp = await fetch(resultsUrl);
     records = await resp.json();
   } catch (e) {
     document.getElementById("trend-note").className = "error";
@@ -316,6 +373,78 @@ async function bootstrap() {
     document.getElementById("trend-note").style.display = "none";
     document.getElementById("trend-grid").innerHTML = buildTrendTable(records);
     initReplay(records);
+  }
+}
+
+async function bootstrap() {
+  // Fetch run list first
+  let runs = [];
+  try {
+    const resp = await fetch("/api/runs");
+    runs = await resp.json();
+  } catch (_e) {
+    // ignore — fall through to flat-folder mode
+  }
+
+  if (Array.isArray(runs) && runs.length > 0) {
+    // ---- Multi-run mode ----
+
+    // Build run selector <select>
+    const selectorEl = document.getElementById("run-selector-container");
+    const select = document.createElement("select");
+    select.id = "run-select";
+    select.style.cssText = "margin-bottom:16px;padding:4px 8px;font-size:0.875rem;";
+    for (const name of runs) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    }
+    const label = document.createElement("label");
+    label.htmlFor = "run-select";
+    label.textContent = "Run: ";
+    label.style.cssText = "font-weight:600;margin-right:6px;font-size:0.875rem;";
+    selectorEl.appendChild(label);
+    selectorEl.appendChild(select);
+    selectorEl.style.display = "";
+
+    // Fetch summaries for all runs (for comparison table)
+    const runsData = await Promise.all(
+      runs.map(async name => {
+        try {
+          const r = await fetch("/api/summary?run=" + encodeURIComponent(name));
+          const s = await r.json();
+          return { name, summary: s };
+        } catch (_e) {
+          return { name, summary: { conditions: [], normal_tasks: null } };
+        }
+      })
+    );
+
+    // Render comparison table
+    const compContainer = document.getElementById("run-comparison-container");
+    compContainer.innerHTML = buildRunComparisonTable(runsData);
+    compContainer.style.display = "";
+
+    // Initial render: first run
+    const firstRun = runs[0];
+    await _renderGrids(
+      "/api/summary?run=" + encodeURIComponent(firstRun),
+      "/api/results?run=" + encodeURIComponent(firstRun)
+    );
+
+    // Change listener
+    select.addEventListener("change", async function () {
+      const chosen = this.value;
+      await _renderGrids(
+        "/api/summary?run=" + encodeURIComponent(chosen),
+        "/api/results?run=" + encodeURIComponent(chosen)
+      );
+    });
+
+  } else {
+    // ---- Flat-folder mode (no subfolders) — original behaviour ----
+    await _renderGrids("/api/summary", "/api/results");
   }
 }
 

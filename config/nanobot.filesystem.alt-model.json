@@ -1,0 +1,41 @@
+{
+  "agents": {
+    "defaults": {
+      "model": "meta-llama/llama-3.3-70b-instruct",
+      "provider": "openrouter",
+      "dream": { "enabled": false },
+      "maxToolIterations": 15,
+      "providerRetryMode": "persistent"
+    }
+  },
+  "providers": {
+    "openrouter": {
+      "apiKey": "${OPENROUTER_API_KEY}",
+      "extraBody": {
+        "provider": {
+          "order": ["DeepInfra"],
+          "allow_fallbacks": false,
+          "require_parameters": true
+        }
+      }
+    }
+  },
+  "tools": {
+    "exec":    { "enable": false },
+    "web":     { "enable": false },
+    "file":    { "enable": false },
+    "cliApps": { "enable": false },
+    "my":      { "enable": false },
+    "mcpServers": {
+      "filesystem": {
+        "type": "stdio",
+        "command": "npx.cmd",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "WORKDIR_PLACEHOLDER"
+        ]
+      }
+    }
+  }
+}

@@ -39,6 +39,26 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # ---------------------------------------------------------------------------
+# Module-level autouse fixture — redirect all file I/O to tmp_path
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _redirect_gate_paths(tmp_path: Path):
+    """Patch _RECORDS_DIR and _OUTPUT_PATH to tmp_path for every test.
+
+    This prevents any test from accidentally writing into the real
+    results/pg8-gate/ or docs/notes/ directories.
+    """
+    records_dir = tmp_path / "pg8-gate"
+    output_path = tmp_path / "guard-gate-results.md"
+    with (
+        patch.object(_gate, "_RECORDS_DIR", records_dir),
+        patch.object(_gate, "_OUTPUT_PATH", output_path),
+    ):
+        yield
+
+
+# ---------------------------------------------------------------------------
 # Load the script as a module (lives outside the package hierarchy)
 # ---------------------------------------------------------------------------
 
@@ -230,13 +250,11 @@ class TestHealthCheck:
         from toolfence.contracts.surface import SurfaceFile
         surface = _fake_surface()
         traces = [_scripted_trace()] * 10
-        output_file = tmp_path / "guard-gate-results.md"
         mock_health = MagicMock()
 
         with (
             patch.object(_gate, "check_galaxium_health", mock_health),
             patch.object(_gate, "make_live_factory", return_value=_make_factory(traces)),
-            patch.object(_gate, "_OUTPUT_PATH", output_file),
             patch.object(SurfaceFile, "model_validate", return_value=surface),
             patch("pathlib.Path.read_text", return_value="{}"),
             pytest.raises(SystemExit),

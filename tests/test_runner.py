@@ -649,3 +649,57 @@ def test_runner_cards_shown_counts_held_calls() -> None:
     assert records[0].cards_shown == 2, (
         f"Expected cards_shown=2, got {records[0].cards_shown}"
     )
+
+
+# ---------------------------------------------------------------------------
+# P1-3 — _count_held deduplicates identical (name, params) pairs
+# ---------------------------------------------------------------------------
+
+def test_count_held_distinct_pairs() -> None:
+    """3 identical held calls + 1 different held call → 2 distinct cards.
+
+    Mirrors the Telegram gate's _sent_hashes deduplication: repeated calls
+    with the same tool name and params only show one confirmation card.
+    """
+    from toolfence.engine.runner import _count_held
+    from toolfence.contracts.trace import Trace, TraceEntry, UsageInfo
+
+    _usage = UsageInfo(
+        input_tokens=0, output_tokens=0, reasoning_tokens=0,
+        total_tokens=0, generation_ms=0,
+    )
+
+    def _entry(name: str, params: dict, decision: str = "hold") -> TraceEntry:
+        return TraceEntry(
+            name=name,
+            params=params,
+            result=None,
+            error=None,
+            duration_ms=0,
+            provenance={},
+            guard_decision=decision,  # type: ignore[arg-type]
+        )
+
+    # 3 identical holds for create_quote(amount=100) + 1 different hold
+    tool_calls = [
+        _entry("create_quote", {"amount": 100}),   # held #1
+        _entry("create_quote", {"amount": 100}),   # held #2 — same pair
+        _entry("create_quote", {"amount": 100}),   # held #3 — same pair
+        _entry("create_quote", {"amount": 200}),   # held #4 — different params → new pair
+    ]
+
+    trace = Trace(
+        run_id="test",
+        session_key="s",
+        model="m",
+        host="h",
+        timestamp="2024-01-01T00:00:00Z",
+        status="ok",
+        final_reply=None,
+        tool_calls=tool_calls,
+        usage=_usage,
+    )
+
+    assert _count_held(trace) == 2, (
+        f"Expected 2 distinct (name, params) pairs, got _count_held={_count_held(trace)}"
+    )

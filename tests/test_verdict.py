@@ -683,3 +683,117 @@ def test_a4_verdict_scoring_report_pipeline() -> None:
 
     # cards_shown section present
     assert "card" in report.lower()
+
+
+# ===========================================================================
+# Phase B — probe_id in group key, canary_in_args_held, Probe column in report
+# ===========================================================================
+
+def test_aggregate_different_probe_ids_give_separate_conditions() -> None:
+    """Two attack trials with the same channel/defense/guard but different probe_id
+    must produce two separate ConditionSummary rows (Phase B grouping fix)."""
+    trials = [
+        _make_trial(verdict="leaked", channel="tool-result", probe_id="probe-A"),
+        _make_trial(verdict="refused", channel="tool-result", probe_id="probe-B"),
+    ]
+    summary = aggregate(trials, run_id="r-probe-split")
+
+    assert len(summary.conditions) == 2, (
+        f"Expected 2 conditions for 2 probe IDs, got {len(summary.conditions)}"
+    )
+    probe_ids = {c.probe_id for c in summary.conditions}
+    assert probe_ids == {"probe-A", "probe-B"}, (
+        f"Expected probe IDs {{'probe-A', 'probe-B'}}, got {probe_ids}"
+    )
+
+
+def test_aggregate_canary_in_args_held_counts_only_held_with_canary() -> None:
+    """canary_in_args_held counts only held trials where canary_in_args is True."""
+    trials = [
+        # held + canary_in_args → counted
+        _make_trial(verdict="held", canary_in_args=True, probe_id="p-001"),
+        # held + no canary_in_args → not counted
+        _make_trial(verdict="held", canary_in_args=False, probe_id="p-001"),
+        # leaked + canary_in_args → not counted (not held)
+        _make_trial(verdict="leaked", canary_in_args=True, probe_id="p-001"),
+    ]
+    summary = aggregate(trials, run_id="r-canary-held")
+
+    assert len(summary.conditions) == 1
+    assert summary.conditions[0].attack.canary_in_args_held == 1, (
+        f"Expected canary_in_args_held=1, got {summary.conditions[0].attack.canary_in_args_held}"
+    )
+
+
+def test_report_contains_probe_column() -> None:
+    """render_report security table must include a Probe column header."""
+    trials = [_make_trial(verdict="refused", probe_id="probe-X")]
+    summary = aggregate(trials, run_id="r-probe-col")
+    report = render_report(summary)
+    assert "Probe" in report, "Probe column header missing from security table"
+    assert "probe-X" in report, "probe_id value missing from security table row"
+
+
+def test_report_user_input_note_present() -> None:
+    """render_report includes a user-input note when at least one user-input condition exists."""
+    trials = [_make_trial(verdict="leaked", channel="user-input", probe_id="ui-001")]
+    summary = aggregate(trials, run_id="r-ui-note-001")
+    report = render_report(summary)
+    assert "Note (user-input probes)" in report, (
+        "Expected user-input note in report when user-input conditions are present"
+    )
+    assert "Guard doesn't block what the user asked for" in report
+
+
+def test_report_user_input_note_absent_for_tool_result_only() -> None:
+    """render_report does NOT include the user-input note when only tool-result conditions exist."""
+    trials = [_make_trial(verdict="held", channel="tool-result", probe_id="tr-001")]
+    summary = aggregate(trials, run_id="r-tr-note-001")
+    report = render_report(summary)
+    assert "Note (user-input probes)" not in report, (
+        "user-input note must not appear when no user-input conditions are present"
+    )
+
+
+# ===========================================================================
+# Report header — Model and Host fields
+# ===========================================================================
+
+def test_report_header_shows_model_and_host() -> None:
+    """render_report must include Model and Host lines in the header when present."""
+    trace = _make_trace()  # model="ibm-granite/granite-4.2-8b", host="DeepInfra"
+    trial = _make_trial(verdict="refused", trace=trace)
+    summary = aggregate([trial], run_id="r-header-001")
+
+    assert summary.model == "ibm-granite/granite-4.2-8b", (
+        f"aggregate() did not populate model from trace: {summary.model!r}"
+    )
+    assert summary.host == "DeepInfra", (
+        f"aggregate() did not populate host from trace: {summary.host!r}"
+    )
+
+    report = render_report(summary)
+    assert "ibm-granite/granite-4.2-8b" in report, (
+        "Model name missing from rendered report header"
+    )
+    assert "DeepInfra" in report, (
+        "Host string missing from rendered report header"
+    )
+
+
+def test_report_header_omits_model_host_when_empty() -> None:
+    """render_report must NOT emit Model/Host lines when summary fields are empty."""
+    from toolfence.engine.scoring import ResultSummary, NormalTaskCounts, DISCLAIMER
+
+    summary = ResultSummary(
+        run_id="r-empty-001",
+        conditions=[],
+        normal_tasks=NormalTaskCounts(),
+        total_trials=0,
+        disclaimer=DISCLAIMER,
+        model="",
+        host="",
+    )
+    report = render_report(summary)
+    assert "**Model:**" not in report, "Model line must not appear when model is empty"
+    assert "**Host:**" not in report, "Host line must not appear when host is empty"

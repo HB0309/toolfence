@@ -5,12 +5,15 @@ no outbound network, no environment variable reads.
 
 Endpoints
 ---------
-GET /                     → static/index.html
-GET /static/<filename>    → static/<filename>
-GET /api/results          → JSON array of all TrialRecord dicts in results_dir
-GET /api/summary          → ResultSummary.model_dump() aggregated from results_dir
+GET /                        → static/index.html
+GET /static/<filename>       → static/<filename>
+GET /api/results             → JSON array of all TrialRecord dicts in results_dir
+GET /api/results?run=<name>  → JSON array from the named subfolder of results_dir
+GET /api/summary             → ResultSummary.model_dump() aggregated from results_dir
+GET /api/summary?run=<name>  → ResultSummary aggregated from the named subfolder
+GET /api/runs                → sorted list of subfolder names that contain *.json files
 
-stdlib only: http.server, json, pathlib, argparse.
+stdlib only: http.server, json, pathlib, argparse, urllib.parse.
 """
 
 from __future__ import annotations
@@ -58,6 +61,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._serve_results()
         elif path == "/api/summary":
             self._serve_summary()
+        elif path == "/api/runs":
+            self._serve_runs()
         else:
             self._not_found()
 
@@ -78,7 +83,19 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
     def _serve_results(self) -> None:
         from toolfence.contracts.trial import TrialRecord
-        raw_pairs = _load_records_with_names(self.results_dir)
+
+        run_name = self._query_param("run")
+        sub_dir: Path | None = None
+        if run_name is not None:
+            if not _validate_run_name(run_name):
+                self._bad_request()
+                return
+            sub_dir = self.results_dir / run_name
+            if not sub_dir.is_dir():
+                self._not_found()
+                return
+
+        raw_pairs = _load_records_with_names(self.results_dir, sub_dir)
         records = []
         for filename, r in raw_pairs:
             try:
@@ -96,7 +113,19 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         from toolfence.contracts.trial import TrialRecord
         from toolfence.engine.scoring import aggregate
 
-        raw_records = _load_records(self.results_dir)
+        run_name = self._query_param("run")
+        sub_dir: Path | None = None
+        if run_name is not None:
+            if not _validate_run_name(run_name):
+                self._bad_request()
+                return
+            sub_dir = self.results_dir / run_name
+            if not sub_dir.is_dir():
+                self._not_found()
+                return
+
+        run_id = run_name if run_name is not None else "dashboard"
+        raw_records = _load_records(self.results_dir, sub_dir)
         trial_records = []
         for r in raw_records:
             try:
@@ -104,9 +133,22 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             except Exception:  # noqa: BLE001
                 pass
 
-        summary = aggregate(trial_records, run_id="dashboard")
+        summary = aggregate(trial_records, run_id=run_id)
         body = json.dumps(summary.model_dump(), default=str).encode("utf-8")
         self._send_json(body)
+
+    def _serve_runs(self) -> None:
+        runs = _list_runs(self.results_dir)
+        body = json.dumps(runs).encode("utf-8")
+        self._send_json(body)
+
+    def _query_param(self, key: str) -> str | None:
+        """Return the value of a single query parameter, or None if absent."""
+        from urllib.parse import parse_qs, urlparse
+        qs = urlparse(self.path).query
+        params = parse_qs(qs)
+        vals = params.get(key)
+        return vals[0] if vals else None
 
     def _send_json(self, body: bytes) -> None:
         self.send_response(200)
@@ -119,6 +161,11 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
         self.wfile.write(b"Not found")
+
+    def _bad_request(self) -> None:
+        self.send_response(400)
+        self.end_headers()
+        self.wfile.write(b"Bad request")
 
 
 # ---------------------------------------------------------------------------
@@ -135,12 +182,30 @@ def _mime(filename: str) -> str:
     return "application/octet-stream"
 
 
-def _load_records(results_dir: Path) -> list[dict]:
-    """Load all *.json files from *results_dir* as plain dicts."""
-    records = []
+def _validate_run_name(run_name: str) -> bool:
+    """Return True iff run_name is safe (no path separators or traversal)."""
+    return bool(run_name) and ".." not in run_name and "/" not in run_name and "\\" not in run_name
+
+
+def _list_runs(results_dir: Path) -> list[str]:
+    """Return sorted subfolder names that contain at least one *.json file.
+    Returns [] if no such subfolders exist (flat-folder mode)."""
     if not results_dir.is_dir():
+        return []
+    runs = []
+    for sub in sorted(results_dir.iterdir()):
+        if sub.is_dir() and any(sub.glob("*.json")):
+            runs.append(sub.name)
+    return runs
+
+
+def _load_records(results_dir: Path, sub_dir: Path | None = None) -> list[dict]:
+    """Load all *.json files from *results_dir* (or *sub_dir*) as plain dicts."""
+    scan_dir = sub_dir if sub_dir is not None else results_dir
+    records = []
+    if not scan_dir.is_dir():
         return records
-    for jf in sorted(results_dir.glob("*.json")):
+    for jf in sorted(scan_dir.glob("*.json")):
         try:
             records.append(json.loads(jf.read_text(encoding="utf-8")))
         except Exception:  # noqa: BLE001
@@ -148,12 +213,13 @@ def _load_records(results_dir: Path) -> list[dict]:
     return records
 
 
-def _load_records_with_names(results_dir: Path) -> list[tuple[str, dict]]:
+def _load_records_with_names(results_dir: Path, sub_dir: Path | None = None) -> list[tuple[str, dict]]:
     """Like _load_records but returns (filename, dict) pairs."""
+    scan_dir = sub_dir if sub_dir is not None else results_dir
     pairs: list[tuple[str, dict]] = []
-    if not results_dir.is_dir():
+    if not scan_dir.is_dir():
         return pairs
-    for jf in sorted(results_dir.glob("*.json")):
+    for jf in sorted(scan_dir.glob("*.json")):
         try:
             pairs.append((jf.name, json.loads(jf.read_text(encoding="utf-8"))))
         except Exception:  # noqa: BLE001

@@ -12,3 +12,6 @@ config/cache/
 _env
 docs/b*-plan.md
 config/pairing.json
+
+profiles/fs-workdir/
+profiles/filesystem-surface.draft.json
