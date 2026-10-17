@@ -34,7 +34,29 @@ from toolfence.guard.provenance import ProvenanceStore
 from toolfence.guard.taint import SessionTaint
 from toolfence.integration.installer import install_guard, verify_guard_invariant
 
-_HOST = "DeepInfra/CoreWeave (pinned)"
+def _host_from_config(config_path: str) -> str:
+    """Derive a human-readable host string from the nanobot config's provider order.
+
+    Reads ``providers.openrouter.extraBody.provider.order`` from the JSON file
+    and formats it as e.g. ``"CoreWeave (pinned)"`` or
+    ``"DeepInfra, CoreWeave (pinned)"``.  Falls back to ``"unknown"`` if the
+    key is absent or the file cannot be read.
+    """
+    try:
+        data = json.loads(Path(config_path).read_text(encoding="utf-8"))
+        order: list = (
+            data
+            .get("providers", {})
+            .get("openrouter", {})
+            .get("extraBody", {})
+            .get("provider", {})
+            .get("order", [])
+        )
+        if order:
+            return ", ".join(str(p) for p in order) + " (pinned)"
+    except Exception:  # noqa: BLE001
+        pass
+    return "unknown"
 
 # ---------------------------------------------------------------------------
 # Process-wide persistent event loop
@@ -380,6 +402,8 @@ def _status_from_hook(hook: Any) -> str:
     sr_lower = str(sr).lower()
     if "max" in sr_lower and "iter" in sr_lower:
         return "max_iterations"
+    if sr_lower == "error":
+        return "error"
     return "ok"  # other stop reasons are still a completed turn
 
 
@@ -403,13 +427,13 @@ async def _run_with_timeout(coro: Any, timeout: float) -> tuple[Any, str]:
 # ---------------------------------------------------------------------------
 
 
-def _error_trace(run_id: str, session_key: str, model: str, timestamp: str) -> Trace:
+def _error_trace(run_id: str, session_key: str, model: str, timestamp: str, host: str = "unknown") -> Trace:
     """Return a schema-valid Trace with status='error' and no tool calls."""
     return Trace(
         run_id=run_id,
         session_key=session_key,
         model=model,
-        host=_HOST,
+        host=host,
         timestamp=timestamp,
         status="error",
         final_reply=None,
@@ -574,7 +598,10 @@ class NanobotAdapter:
                 # always receives a schema-valid object.
                 timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 session_key = f"eval:{self._run_id}:{id(self):x}"
-                trace = _error_trace(self._run_id, session_key, "unknown", timestamp)
+                trace = _error_trace(
+                    self._run_id, session_key, "unknown", timestamp,
+                    _host_from_config(self._config_path),
+                )
             return trace
         finally:
             if row_id is not None and inj_db is not None:
@@ -599,6 +626,7 @@ class NanobotAdapter:
         session_key = f"eval:{self._run_id}:{id(self):x}"
         timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         model = "unknown"
+        host = _host_from_config(self._config_path)
 
         workspace = tempfile.mkdtemp(prefix="toolfence-eval-")
         agents_md_path = Path(workspace) / "AGENTS.md"
@@ -649,7 +677,7 @@ class NanobotAdapter:
                 )
 
             except Exception:  # noqa: BLE001
-                return _error_trace(self._run_id, session_key, model, timestamp)
+                return _error_trace(self._run_id, session_key, model, timestamp, host)
 
             # ----------------------------------------------------------------
             # Connect + Guard install + run phase.
@@ -759,7 +787,7 @@ class NanobotAdapter:
                 run_id=self._run_id,
                 session_key=session_key,
                 model=model,
-                host=_HOST,
+                host=host,
                 timestamp=timestamp,
                 status=status,  # type: ignore[arg-type]
                 final_reply=response.content if response is not None else None,
