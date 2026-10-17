@@ -39,6 +39,11 @@ from toolfence.contracts.trace import ProvenanceLabel
 # stored and matched as the bare string "Alice".
 _JSON_STRIP_CHARS = '{}[]",: \t\r\n'
 
+# Extra punctuation stripped from user-message tokens beyond _JSON_STRIP_CHARS.
+# Covers sentence-ending periods and bracket/parenthesis wrapping so that
+# "(alice@example.com)." and "report.txt." resolve to their bare forms.
+_USER_STRIP_CHARS = _JSON_STRIP_CHARS + "()."
+
 
 def _normalise(value: Any) -> set[str]:
     """Return the set of normalised string forms used for provenance matching.
@@ -135,6 +140,12 @@ class ProvenanceStore:
             norm = " ".join(token.split())
             if norm:
                 self._user_values.add(norm)
+                # Strip sentence/bracket punctuation so that tokens like
+                # "(alice@example.com)." and "report.txt." are also stored as
+                # their bare forms "alice@example.com" and "report.txt".
+                stripped = norm.strip(_USER_STRIP_CHARS)
+                if stripped and stripped != norm:
+                    self._user_values.add(stripped)
                 # Also add numeric forms so "1" matches user-typed "1"
                 try:
                     self._user_values.add(str(int(float(norm))))

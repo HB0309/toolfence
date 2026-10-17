@@ -50,14 +50,20 @@ def main() -> None:
 
     # run
     run_p = sub.add_parser("run", help="Run the evaluation matrix.")
-    run_p.add_argument("--surface", required=True, metavar="PATH",
-                       help="Path to the reviewed surface.json.")
+    run_p.add_argument("--surface", required=False, default=None, metavar="PATH",
+                       help="Path to the reviewed surface.json. Required unless --target is given.")
     run_p.add_argument("--output", default="results", metavar="DIR",
                        help="Directory to write trial record JSON files (default: results/).")
     run_p.add_argument("--live", action="store_true",
                        help="Use NanobotAdapter (real model) instead of the scripted adapter.")
     run_p.add_argument("--config", default="config/nanobot.eval.json", metavar="PATH",
                        help="Nanobot config path (default: config/nanobot.eval.json).")
+    run_p.add_argument("--target", default=None, metavar="PATH",
+                       help=(
+                           "Path to a target profile JSON (e.g. profiles/galaxium.json). "
+                           "Requires --live. Overrides --config, --surface, and the "
+                           "default probe list with values from the profile."
+                       ))
     run_p.add_argument("--probe", default=None, metavar="ID|normal",
                        help=(
                            "Run only the named attack probe ID (skips normal trials), "
@@ -106,6 +112,7 @@ def main() -> None:
             args.output,
             live=args.live,
             config_path=args.config,
+            target_path=getattr(args, "target", None),
             probe_filter=args.probe,
             defense_filter=args.defense,
             guard_filter=args.guard,
@@ -156,25 +163,95 @@ def _cmd_scan(path: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _apply_task_prompt(
+    probe_dict: dict,
+    profile: Any,
+    task_prompt_override: str | None,
+) -> dict:
+    """Return probe_dict with the effective task_prompt stamped in.
+
+    Priority:
+    1. Per-probe *task_prompt_override* wins (when not None).
+    2. Profile-level *tool_result_task_prompt* for tool-result channel probes.
+    3. Non-tool-result probes without an override are returned unchanged.
+    """
+    if probe_dict.get("channel") == "tool-result":
+        effective = (
+            task_prompt_override
+            if task_prompt_override is not None
+            else profile.tool_result_task_prompt
+        )
+        return {**probe_dict, "task_prompt": effective}
+    if task_prompt_override is not None:
+        return {**probe_dict, "task_prompt": task_prompt_override}
+    return probe_dict
+
+
+# ---------------------------------------------------------------------------
 # run
 # ---------------------------------------------------------------------------
 
 def _cmd_run(
-    surface_path: str,
+    surface_path: str | None,
     output_dir: str,
     *,
     live: bool = False,
     config_path: str = "config/nanobot.eval.json",
+    target_path: str | None = None,
     probe_filter: str | None = None,
     defense_filter: str | None = None,
     guard_filter: str | None = None,
 ) -> None:
-    """Run the evaluation matrix (scripted or live adapter)."""
+    """Run the evaluation matrix (scripted or live adapter).
+
+    When ``target_path`` is set, the profile overrides ``config_path``,
+    ``surface_path``, and the default probe list.  ``--target`` requires
+    ``--live``; passing ``--target`` without ``--live`` is a usage error.
+    """
     import os
 
     from toolfence.contracts.surface import SurfaceFile
     from toolfence.engine.adapter import ScriptedAdapter
     from toolfence.engine.runner import DEFAULT_DEFENSES, NORMAL_TASK_PROMPT, EvaluationRunner
+
+    _REPO_ROOT = Path(__file__).parent.parent.parent
+
+    # --- Validate surface/target combination ---
+    if surface_path is None and target_path is None:
+        print(
+            "Error: --surface is required when --target is not given.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # --- Load target profile (if given) ---
+    profile = None
+    if target_path is not None:
+        from toolfence.contracts.profile import TargetProfile
+
+        try:
+            profile = TargetProfile.model_validate(
+                json.loads(Path(target_path).read_text(encoding="utf-8"))
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"Error loading target profile {target_path!r}: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        # --target requires --live; fail immediately with a usage error.
+        if not live:
+            print(
+                "Error: --target requires --live. Run with --live to use a target profile.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        # Profile overrides CLI --config and --surface for live runs.
+        config_path = profile.nanobot_config
+        surface_path = profile.surface
 
     # --- Live mode pre-flight ---
     adapter_factory = None
@@ -187,18 +264,35 @@ def _cmd_run(
             )
             sys.exit(1)
 
-        from toolfence.integration.live_factory import (
-            check_galaxium_health,
-            make_live_factory,
-        )
-        try:
-            check_galaxium_health()
-        except RuntimeError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            sys.exit(1)
+        if profile is not None:
+            # Profile-driven live run.
+            from toolfence.integration.live_factory import (
+                check_target_health,
+                make_live_factory_from_profile,
+            )
+            if profile.health_url is not None:
+                try:
+                    check_target_health(profile.health_url)
+                except RuntimeError as exc:
+                    print(f"Error: {exc}", file=sys.stderr)
+                    sys.exit(1)
 
-        run_id_for_factory = datetime.datetime.utcnow().strftime("run-%Y%m%d-%H%M%S")
-        adapter_factory = make_live_factory(config_path, surface_path, run_id_for_factory)
+            run_id_for_factory = datetime.datetime.utcnow().strftime("run-%Y%m%d-%H%M%S")
+            adapter_factory = make_live_factory_from_profile(profile, run_id_for_factory)
+        else:
+            # Legacy Galaxium live run (no --target).
+            from toolfence.integration.live_factory import (
+                check_galaxium_health,
+                make_live_factory,
+            )
+            try:
+                check_galaxium_health()
+            except RuntimeError as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                sys.exit(1)
+
+            run_id_for_factory = datetime.datetime.utcnow().strftime("run-%Y%m%d-%H%M%S")
+            adapter_factory = make_live_factory(config_path, surface_path, run_id_for_factory)
     else:
         run_id_for_factory = None  # will be set below
 
@@ -212,38 +306,74 @@ def _cmd_run(
         sys.exit(1)
 
     # --- Locate probe templates and their paired fixture traces ---
-    _REPO_ROOT = Path(__file__).parent.parent.parent
     engine_probes_dir = _REPO_ROOT / "toolfence" / "engine" / "probes"
     fixtures_probes_dir = _REPO_ROOT / "fixtures" / "probes"
 
-    # Fixed pairing: probe template → fixture trace file name
-    _ATTACK_PAIRS: list[tuple[str, str]] = [
-        ("cancel-user-input.json",  "fixture_user_input.json"),
-        ("cancel-tool-result.json", "fixture_tool_result.json"),
-    ]
-    _NORMAL_FIXTURE = "normal_task.json"
-    _NORMAL_PROBE_CONTENT = NORMAL_TASK_PROMPT
-
     attack_probes: list[tuple[dict, Any]] = []
-    for probe_name, fixture_name in _ATTACK_PAIRS:
-        probe_path = engine_probes_dir / probe_name
-        fix_path = fixtures_probes_dir / fixture_name
-        if not probe_path.exists():
-            print(f"Probe template not found: {probe_path}", file=sys.stderr)
-            sys.exit(1)
-        if not fix_path.exists():
-            print(f"Fixture trace not found: {fix_path}", file=sys.stderr)
-            sys.exit(1)
-        probe_dict = json.loads(probe_path.read_text(encoding="utf-8"))
-        attack_probes.append((probe_dict, ScriptedAdapter(fix_path)))
+    normal_probes: list[tuple[dict, Any]] = []
 
-    normal_fix_path = fixtures_probes_dir / _NORMAL_FIXTURE
-    if not normal_fix_path.exists():
-        print(f"Normal task fixture not found: {normal_fix_path}", file=sys.stderr)
-        sys.exit(1)
-    normal_probes: list[tuple[dict, Any]] = [
-        ({"content": _NORMAL_PROBE_CONTENT}, ScriptedAdapter(normal_fix_path)),
-    ]
+    if profile is not None:
+        # Profile-driven probe list.
+        for probe_entry in profile.attack_probes:
+            if isinstance(probe_entry, str):
+                probe_path = _REPO_ROOT / probe_entry
+                task_prompt_override = None
+            else:
+                # AttackProbeEntry object with an explicit per-probe task_prompt.
+                probe_path = _REPO_ROOT / probe_entry.path
+                task_prompt_override = probe_entry.task_prompt
+
+            if not probe_path.exists():
+                print(f"Probe template not found: {probe_path}", file=sys.stderr)
+                sys.exit(1)
+            probe_dict = json.loads(probe_path.read_text(encoding="utf-8"))
+
+            probe_dict = _apply_task_prompt(probe_dict, profile, task_prompt_override)
+
+            normal_fix_path = fixtures_probes_dir / "normal_task.json"
+            stub_adapter = ScriptedAdapter(normal_fix_path) if normal_fix_path.exists() else None
+            attack_probes.append((probe_dict, stub_adapter))  # type: ignore[arg-type]
+
+        # Normal task from profile.
+        normal_fix_path = fixtures_probes_dir / "normal_task.json"
+        if not normal_fix_path.exists():
+            print(f"Normal task fixture not found: {normal_fix_path}", file=sys.stderr)
+            sys.exit(1)
+        normal_probes.append((
+            {
+                "content": profile.normal_task.prompt,
+                "goal_tool": profile.normal_task.goal_tool,
+            },
+            ScriptedAdapter(normal_fix_path),
+        ))
+    else:
+        # Legacy fixed probe list (backward-compatible Galaxium path).
+        _ATTACK_PAIRS: list[tuple[str, str]] = [
+            ("cancel-user-input.json",  "fixture_user_input.json"),
+            ("cancel-tool-result.json", "fixture_tool_result.json"),
+        ]
+        _NORMAL_FIXTURE = "normal_task.json"
+        _NORMAL_PROBE_CONTENT = NORMAL_TASK_PROMPT
+
+        for probe_name, fixture_name in _ATTACK_PAIRS:
+            probe_path = engine_probes_dir / probe_name
+            fix_path = fixtures_probes_dir / fixture_name
+            if not probe_path.exists():
+                print(f"Probe template not found: {probe_path}", file=sys.stderr)
+                sys.exit(1)
+            if not fix_path.exists():
+                print(f"Fixture trace not found: {fix_path}", file=sys.stderr)
+                sys.exit(1)
+            probe_dict = json.loads(probe_path.read_text(encoding="utf-8"))
+            attack_probes.append((probe_dict, ScriptedAdapter(fix_path)))
+
+        normal_fix_path = fixtures_probes_dir / _NORMAL_FIXTURE
+        if not normal_fix_path.exists():
+            print(f"Normal task fixture not found: {normal_fix_path}", file=sys.stderr)
+            sys.exit(1)
+        normal_probes = [
+            ({"content": _NORMAL_PROBE_CONTENT}, ScriptedAdapter(normal_fix_path)),
+        ]
 
     # --- Apply filters ---
     # --probe: a probe ID selects attack-only and drops normal;

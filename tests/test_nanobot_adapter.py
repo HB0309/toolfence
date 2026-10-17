@@ -394,6 +394,163 @@ def test_mcp_urls_are_all_loopback_false_for_remote_url():
     assert _mcp_urls_are_all_loopback(cfg) is False
 
 
+
+# ---------------------------------------------------------------------------
+# Test 9 — required_tool_prefix gate in _async_run_turn
+#
+# These tests drive _async_run_turn directly (monkeypatching the nanobot
+# imports that would be needed) to verify that process_direct is called when
+# the prefix matches and NOT called when it doesn't.
+# ---------------------------------------------------------------------------
+
+
+def _run_async_turn_with_mocks(
+    adapter: NanobotAdapter,
+    tool_names: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Trace, "MagicMock"]:
+    """Patch _async_run_turn's nanobot imports and run it; return (trace, agent_loop_mock).
+
+    The key insight: _async_run_turn creates its own ``tools`` via
+    ``ToolRegistry()`` and checks ``tools.tool_names``.  We must configure
+    ``tool_names`` on the object that ``ToolRegistry()`` returns, not on a
+    separate stub.  We do that by setting it on the MagicMock's return_value
+    before the nanobot fake modules are installed into sys.modules.
+    """
+    import sys
+    from types import SimpleNamespace
+
+    import toolfence.integration.nanobot_adapter as _mod
+    import toolfence.contracts.surface as _surface_mod
+    import toolfence.integration.installer as _installer
+
+    # --- Build stub objects ---
+    response_obj = MagicMock()
+    response_obj.content = "stub reply"
+
+    agent_loop = MagicMock()
+    agent_loop.process_direct = AsyncMock(return_value=response_obj)
+    agent_loop.aclose = AsyncMock()
+
+    mcp_provider = MagicMock()
+    mcp_provider.connect = AsyncMock()
+    mcp_provider.aclose = AsyncMock()
+
+    # The tools registry instance — _async_run_turn calls ToolRegistry() and
+    # then checks .tool_names on the result.
+    tools_instance = MagicMock()
+    tools_instance.tool_names = tool_names
+
+    runtime_config = SimpleNamespace(
+        agents=SimpleNamespace(defaults=SimpleNamespace(model="stub-model")),
+        tools=SimpleNamespace(mcp_servers={}),
+    )
+
+    stub_surface = __import__("toolfence.contracts.surface", fromlist=["SurfaceFile"]).SurfaceFile(
+        version=1, tools=[]
+    )
+
+    fake_hook_instance = MagicMock()
+    fake_hook_instance.tool_events = []
+    fake_hook_instance.usage = None
+    fake_hook_instance.stop_reason = None
+    fake_hook_cls = MagicMock(return_value=fake_hook_instance)
+
+    # --- Build fake nanobot module tree ---
+    fake_nanobot = MagicMock()
+    # AgentLoop.from_config(...) → agent_loop
+    fake_nanobot.agent.loop.AgentLoop.from_config.return_value = agent_loop
+    # MCPProvider.from_config(...) → mcp_provider
+    fake_nanobot.agent.tools.mcp.MCPProvider.from_config.return_value = mcp_provider
+    # ToolRegistry() → tools_instance (the return value of calling the class)
+    fake_nanobot.agent.tools.registry.ToolRegistry.return_value = tools_instance
+    fake_nanobot.bus.queue.MessageBus.return_value = MagicMock()
+    fake_nanobot.providers.factory.make_provider.return_value = MagicMock()
+    # _load_runtime_config is called synchronously
+    fake_nanobot.cli.runtime_config._load_runtime_config = MagicMock(
+        return_value=runtime_config
+    )
+
+    nanobot_mods = {
+        "nanobot": fake_nanobot,
+        "nanobot.agent": fake_nanobot.agent,
+        "nanobot.agent.loop": fake_nanobot.agent.loop,
+        "nanobot.agent.tools": fake_nanobot.agent.tools,
+        "nanobot.agent.tools.mcp": fake_nanobot.agent.tools.mcp,
+        "nanobot.agent.tools.registry": fake_nanobot.agent.tools.registry,
+        "nanobot.bus": fake_nanobot.bus,
+        "nanobot.bus.queue": fake_nanobot.bus.queue,
+        "nanobot.providers": fake_nanobot.providers,
+        "nanobot.providers.factory": fake_nanobot.providers.factory,
+        "nanobot.cli": fake_nanobot.cli,
+        "nanobot.cli.runtime_config": fake_nanobot.cli.runtime_config,
+    }
+    for mod_name, mod_obj in nanobot_mods.items():
+        monkeypatch.setitem(sys.modules, mod_name, mod_obj)
+
+    # Disable the loopback transport swap (no httpx import needed).
+    monkeypatch.setattr(_mod, "_mcp_urls_are_all_loopback", lambda _: False)
+
+    # Replace _make_capture_hook_class with our stub.
+    monkeypatch.setattr(_mod, "_make_capture_hook_class", lambda: fake_hook_cls)
+
+    # No-op install_guard and verify_guard_invariant: patch the names in
+    # nanobot_adapter's own namespace (they are module-level imports there,
+    # not re-imported inside _async_run_turn).
+    monkeypatch.setattr(_mod, "install_guard", lambda *a, **kw: None)
+    monkeypatch.setattr(_mod, "verify_guard_invariant", lambda *a: None)
+
+    # Return a stub surface without reading disk.
+    monkeypatch.setattr(
+        _surface_mod.SurfaceFile,
+        "model_validate",
+        staticmethod(lambda _: stub_surface),
+    )
+
+    trace = asyncio.run(adapter._async_run_turn("test prompt", "none"))
+    return trace, agent_loop
+
+
+def test_prefix_check_skips_process_direct_when_prefix_missing(monkeypatch):
+    """When required_tool_prefix is set and no tool matches, process_direct must NOT be called."""
+    adapter = NanobotAdapter(
+        config_path="config/nanobot.eval.json",
+        surface_path="results/surface.json",
+        run_id="test-pfx-001",
+        guard_on=False,
+        datamark_on=False,
+        required_tool_prefix="mcp_galaxium_",
+    )
+    trace, agent_loop = _run_async_turn_with_mocks(
+        adapter,
+        tool_names=["mcp_other_tool"],  # no mcp_galaxium_ prefix
+        monkeypatch=monkeypatch,
+    )
+    assert trace.status == "error", f"Expected error trace, got {trace.status!r}"
+    agent_loop.process_direct.assert_not_called()
+
+
+def test_prefix_check_calls_process_direct_when_prefix_matches(monkeypatch):
+    """When required_tool_prefix is set and a tool matches, process_direct IS called."""
+    adapter = NanobotAdapter(
+        config_path="config/nanobot.eval.json",
+        surface_path="results/surface.json",
+        run_id="test-pfx-002",
+        guard_on=False,
+        datamark_on=False,
+        required_tool_prefix="mcp_galaxium_",
+    )
+    trace, agent_loop = _run_async_turn_with_mocks(
+        adapter,
+        tool_names=["mcp_galaxium_get_flights_flights_get"],
+        monkeypatch=monkeypatch,
+    )
+    # process_direct was awaited, so status should be "ok" (or at most "error" from
+    # an unrelated setup issue), but crucially it must have been called.
+    agent_loop.process_direct.assert_called_once()
+
+
+
 # ---------------------------------------------------------------------------
 # Live tests — skipped unless TOOLFENCE_LIVE=1
 # ---------------------------------------------------------------------------

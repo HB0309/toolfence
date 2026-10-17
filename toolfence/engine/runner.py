@@ -282,7 +282,11 @@ class EvaluationRunner:
                 if self._adapter_factory is not None:
                     active_adapter = self._adapter_factory(defense, channel, prompt)
                     if channel == "tool-result":
-                        trace = active_adapter.run_turn(TOOL_RESULT_TASK_PROMPT, defense.name)
+                        # Per-probe task_prompt override takes priority over the
+                        # module-level constant so profile-driven runs can supply
+                        # a different prompt per probe.
+                        task_prompt = probe_dict.get("task_prompt", TOOL_RESULT_TASK_PROMPT)
+                        trace = active_adapter.run_turn(task_prompt, defense.name)
                     else:
                         trace = active_adapter.run_turn(prompt, defense.name)
                 else:

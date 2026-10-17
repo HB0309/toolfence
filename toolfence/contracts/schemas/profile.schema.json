@@ -1,0 +1,356 @@
+{
+  "$defs": {
+    "AttackProbeEntry": {
+      "description": "An attack probe with an optional per-probe task_prompt override.\n\nUsed when a probe needs a different task prompt from the profile-level\n``tool_result_task_prompt`` (e.g. the taint-flow probe).",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "task_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Prompt"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "AttackProbeEntry",
+      "type": "object"
+    },
+    "ExtraNormalTask": {
+      "description": "An additional normal task with a descriptive label and optional note.",
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "prompt": {
+          "title": "Prompt",
+          "type": "string"
+        },
+        "goal_tool": {
+          "title": "Goal Tool",
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "required": [
+        "label",
+        "prompt",
+        "goal_tool"
+      ],
+      "title": "ExtraNormalTask",
+      "type": "object"
+    },
+    "FsCanaryFileInjection": {
+      "description": "Inject canary by writing a file into a working directory.",
+      "properties": {
+        "strategy": {
+          "const": "fs_canary_file",
+          "title": "Strategy",
+          "type": "string"
+        },
+        "working_path": {
+          "title": "Working Path",
+          "type": "string"
+        },
+        "filename": {
+          "title": "Filename",
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy",
+        "working_path",
+        "filename"
+      ],
+      "title": "FsCanaryFileInjection",
+      "type": "object"
+    },
+    "FsRestoreReset": {
+      "description": "Reset by deleting and re-copying a folder from a snapshot.",
+      "properties": {
+        "strategy": {
+          "const": "fs_restore",
+          "title": "Strategy",
+          "type": "string"
+        },
+        "snapshot_path": {
+          "title": "Snapshot Path",
+          "type": "string"
+        },
+        "working_path": {
+          "title": "Working Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy",
+        "snapshot_path",
+        "working_path"
+      ],
+      "title": "FsRestoreReset",
+      "type": "object"
+    },
+    "NoInjection": {
+      "description": "No injection (user-input channel only, or external injection).",
+      "properties": {
+        "strategy": {
+          "const": "none",
+          "title": "Strategy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy"
+      ],
+      "title": "NoInjection",
+      "type": "object"
+    },
+    "NoReset": {
+      "description": "No state reset between trials.",
+      "properties": {
+        "strategy": {
+          "const": "none",
+          "title": "Strategy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy"
+      ],
+      "title": "NoReset",
+      "type": "object"
+    },
+    "NormalTask": {
+      "description": "The normal (non-attack) task definition for a profile.",
+      "properties": {
+        "prompt": {
+          "title": "Prompt",
+          "type": "string"
+        },
+        "goal_tool": {
+          "title": "Goal Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt",
+        "goal_tool"
+      ],
+      "title": "NormalTask",
+      "type": "object"
+    },
+    "SqliteBackupReset": {
+      "description": "Reset by backing up and restoring a SQLite database.",
+      "properties": {
+        "strategy": {
+          "const": "sqlite_backup",
+          "title": "Strategy",
+          "type": "string"
+        },
+        "db_path": {
+          "title": "Db Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy",
+        "db_path"
+      ],
+      "title": "SqliteBackupReset",
+      "type": "object"
+    },
+    "SqliteReviewInjection": {
+      "description": "Inject canary by inserting a row into a SQLite reviews table.",
+      "properties": {
+        "strategy": {
+          "const": "sqlite_review",
+          "title": "Strategy",
+          "type": "string"
+        },
+        "db_path": {
+          "title": "Db Path",
+          "type": "string"
+        },
+        "table": {
+          "title": "Table",
+          "type": "string"
+        },
+        "columns": {
+          "additionalProperties": true,
+          "title": "Columns",
+          "type": "object"
+        },
+        "id_column": {
+          "title": "Id Column",
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy",
+        "db_path",
+        "table",
+        "columns",
+        "id_column"
+      ],
+      "title": "SqliteReviewInjection",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Full target profile loaded from ``profiles/<name>.json``.\n\nAll path fields are relative to the repository root.",
+  "properties": {
+    "profile_id": {
+      "title": "Profile Id",
+      "type": "string"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "nanobot_config": {
+      "title": "Nanobot Config",
+      "type": "string"
+    },
+    "surface": {
+      "title": "Surface",
+      "type": "string"
+    },
+    "health_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Health Url"
+    },
+    "state_reset": {
+      "discriminator": {
+        "mapping": {
+          "fs_restore": "#/$defs/FsRestoreReset",
+          "none": "#/$defs/NoReset",
+          "sqlite_backup": "#/$defs/SqliteBackupReset"
+        },
+        "propertyName": "strategy"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/SqliteBackupReset"
+        },
+        {
+          "$ref": "#/$defs/FsRestoreReset"
+        },
+        {
+          "$ref": "#/$defs/NoReset"
+        }
+      ],
+      "title": "State Reset"
+    },
+    "injection": {
+      "discriminator": {
+        "mapping": {
+          "fs_canary_file": "#/$defs/FsCanaryFileInjection",
+          "none": "#/$defs/NoInjection",
+          "sqlite_review": "#/$defs/SqliteReviewInjection"
+        },
+        "propertyName": "strategy"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/SqliteReviewInjection"
+        },
+        {
+          "$ref": "#/$defs/FsCanaryFileInjection"
+        },
+        {
+          "$ref": "#/$defs/NoInjection"
+        }
+      ],
+      "title": "Injection"
+    },
+    "agent_persona": {
+      "title": "Agent Persona",
+      "type": "string"
+    },
+    "normal_task": {
+      "$ref": "#/$defs/NormalTask"
+    },
+    "extra_normal_tasks": {
+      "items": {
+        "$ref": "#/$defs/ExtraNormalTask"
+      },
+      "title": "Extra Normal Tasks",
+      "type": "array"
+    },
+    "tool_result_task_prompt": {
+      "title": "Tool Result Task Prompt",
+      "type": "string"
+    },
+    "attack_probes": {
+      "items": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/$defs/AttackProbeEntry"
+          }
+        ]
+      },
+      "title": "Attack Probes",
+      "type": "array"
+    },
+    "required_tool_prefix": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Required Tool Prefix"
+    }
+  },
+  "required": [
+    "profile_id",
+    "description",
+    "nanobot_config",
+    "surface",
+    "state_reset",
+    "injection",
+    "agent_persona",
+    "normal_task",
+    "tool_result_task_prompt",
+    "attack_probes"
+  ],
+  "title": "TargetProfile",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
