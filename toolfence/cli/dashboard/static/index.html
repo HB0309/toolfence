@@ -99,15 +99,17 @@
     </div>
 
     <!-- -------------------------------------------------------- -->
-    <!-- Security grid (S1: probe list placeholder; S2: heatmap) -->
+    <!-- Security grid (S2: heatmap inside #security-grid)       -->
     <!-- -------------------------------------------------------- -->
     <div class="card mb-3">
       <div class="card-header"><h3 class="card-title">Where leaks happen</h3></div>
       <div class="card-body">
+        <!-- #security-grid contains #chart-heatmap in S2.
+             renderSecurityGrid() (app.js) now delegates to _renderHeatmap()
+             via renderCharts(); it keeps a non-empty fallback for zero trials. -->
         <div id="security-grid">
-          <!-- S1 placeholder; never empty — populated by renderSecurityGrid() -->
+          <div id="chart-heatmap" style="height:280px"></div>
         </div>
-        <div id="chart-heatmap" style="display:none;height:0"></div>
       </div>
     </div>
 
@@ -213,9 +215,8 @@
 <script src="static/vendor/echarts.min.js"></script>
 <script src="static/vendor/tabulator.min.js"></script>
 <script src="static/app.js"></script>
-<!-- charts.js loaded in S2 -->
-<!-- explorer.js loaded in S3 -->
-<script src="static/replay.js"></script>
+<script src="static/charts.js"></script>
+<script src="static/explorer.js"></script>
 
 </body>
 </html>

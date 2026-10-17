@@ -428,6 +428,9 @@ function renderNormalTable() {
 // ---------------------------------------------------------------------------
 
 function renderSecurityGrid() {
+  // In S2+ charts.js owns #security-grid via _renderHeatmap(); skip S1 rendering.
+  if (typeof renderCharts === 'function') return;
+
   const recs = filtered();
   const attack = recs.filter(r => r.kind === 'attack');
   const grid = document.getElementById('security-grid');
@@ -477,8 +480,8 @@ function renderAll() {
   _renderChips();
   renderKpis();
   renderNormalTable();
-  renderSecurityGrid();
-  // renderCharts() called by charts.js once it exists
+  renderSecurityGrid(); // no-op when charts.js is loaded
+  // renderCharts() wired in S2 via charts.js
   if (typeof renderCharts === 'function') renderCharts();
   // renderExplorer() called by explorer.js once it exists
   if (typeof renderExplorer === 'function') renderExplorer();

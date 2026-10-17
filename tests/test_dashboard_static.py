@@ -1,4 +1,4 @@
-"""S1 — Static dashboard tests (no browser required).
+"""S1 + S2 + S3 — Static dashboard tests (no browser required).
 
 Tests verify that index.html has the correct structure, no external URLs are
 referenced, all script/link src files exist, and the page mentions 'inconclusive'.
@@ -17,6 +17,21 @@ Test inventory
   test_style_css_exists                 -- static/style.css is present
   test_verdict_colors_exported          -- app.js defines VERDICT_COLORS
   test_render_all_defined               -- app.js defines renderAll
+
+S2 additions:
+  test_charts_js_exists                 -- static/charts.js is present
+  test_charts_js_loaded_after_app_js    -- charts.js <script> tag appears after app.js in index.html
+  test_charts_js_defines_render_charts  -- charts.js defines renderCharts
+  test_charts_js_references_chart_ids   -- charts.js contains the three chart IDs
+  test_chart_heatmap_inside_security_grid -- #chart-heatmap is nested inside #security-grid in HTML
+
+S3 additions:
+  test_replay_js_gone                     -- replay.js does NOT exist under static/
+  test_explorer_js_exists                 -- static/explorer.js is present
+  test_explorer_js_loaded_after_charts_js -- explorer.js <script> tag appears after charts.js
+  test_explorer_js_references_ids         -- explorer.js references trial-table, trial-flyout, replay-btn, replay-counter
+  test_explorer_js_defines_render_explorer -- explorer.js defines renderExplorer
+  test_replay_js_not_in_html              -- index.html has no <script src=...replay.js...> tag
 """
 
 from __future__ import annotations
@@ -256,4 +271,123 @@ def test_echarts_served_200(_server_url_for_static: str) -> None:
         status = exc.code
     assert status == 200, (
         f"Expected 200 from GET /static/vendor/echarts.min.js, got {status}"
+    )
+
+
+# ===========================================================================
+# S2 — charts.js tests
+# ===========================================================================
+
+def test_charts_js_exists() -> None:
+    """static/charts.js must exist."""
+    assert (_STATIC_DIR / "charts.js").exists(), "static/charts.js not found"
+
+
+def test_charts_js_loaded_after_app_js() -> None:
+    """charts.js <script> tag must appear after the app.js tag in index.html."""
+    assert _INDEX.exists(), f"Expected {_INDEX} to exist"
+    html = _INDEX.read_text(encoding="utf-8")
+    # Find positions of the two script tags
+    app_pos    = html.find('src="static/app.js"')
+    charts_pos = html.find('src="static/charts.js"')
+    assert app_pos    != -1, "index.html must contain a <script src=\"static/app.js\"> tag"
+    assert charts_pos != -1, "index.html must contain a <script src=\"static/charts.js\"> tag"
+    assert charts_pos > app_pos, (
+        "charts.js script tag must appear after app.js script tag in index.html"
+    )
+
+
+def test_charts_js_defines_render_charts() -> None:
+    """charts.js must define renderCharts."""
+    src = (_STATIC_DIR / "charts.js").read_text(encoding="utf-8")
+    assert "function renderCharts" in src, "charts.js must define renderCharts()"
+
+
+def test_charts_js_references_chart_ids() -> None:
+    """charts.js must reference the IDs chart-dumbbell, chart-verdicts and chart-heatmap."""
+    src = (_STATIC_DIR / "charts.js").read_text(encoding="utf-8")
+    for id_ in ("chart-dumbbell", "chart-verdicts", "chart-heatmap"):
+        assert id_ in src, f"charts.js must reference the ID '{id_}'"
+
+
+def test_chart_heatmap_inside_security_grid() -> None:
+    """#chart-heatmap must be nested inside #security-grid in index.html."""
+    assert _INDEX.exists(), f"Expected {_INDEX} to exist"
+    html = _INDEX.read_text(encoding="utf-8")
+
+    # Find the index of id="security-grid" and id="chart-heatmap"
+    grid_pos    = html.find('id="security-grid"')
+    heatmap_pos = html.find('id="chart-heatmap"')
+
+    assert grid_pos    != -1, 'index.html must contain id="security-grid"'
+    assert heatmap_pos != -1, 'index.html must contain id="chart-heatmap"'
+
+    # heatmap must come AFTER the opening of security-grid
+    assert heatmap_pos > grid_pos, (
+        "#chart-heatmap must appear after the opening of #security-grid"
+    )
+
+    # The closing </div> for security-grid must come AFTER chart-heatmap.
+    # Strategy: find the first </div> after heatmap_pos and verify it appears
+    # before the second </div> that would close security-grid's parent.
+    # Simpler: security-grid's content block ends before the card-body close;
+    # just check that the next occurrence of 'id="chart-heatmap"' is between
+    # id="security-grid" and the word 'Real tasks' (the next card).
+    real_tasks_pos = html.find("Real tasks", grid_pos)
+    assert real_tasks_pos == -1 or heatmap_pos < real_tasks_pos, (
+        "#chart-heatmap must be inside #security-grid, not after it"
+    )
+
+
+# ===========================================================================
+# S3 — explorer.js tests
+# ===========================================================================
+
+def test_replay_js_gone() -> None:
+    """static/replay.js must NOT exist after S3 deletes it."""
+    assert not (_STATIC_DIR / "replay.js").exists(), (
+        "static/replay.js must be deleted in S3; it still exists"
+    )
+
+
+def test_explorer_js_exists() -> None:
+    """static/explorer.js must exist."""
+    assert (_STATIC_DIR / "explorer.js").exists(), "static/explorer.js not found"
+
+
+def test_explorer_js_loaded_after_charts_js() -> None:
+    """explorer.js <script> tag must appear after the charts.js tag in index.html."""
+    assert _INDEX.exists(), f"Expected {_INDEX} to exist"
+    html = _INDEX.read_text(encoding="utf-8")
+    charts_pos   = html.find('src="static/charts.js"')
+    explorer_pos = html.find('src="static/explorer.js"')
+    assert charts_pos   != -1, 'index.html must contain a <script src="static/charts.js"> tag'
+    assert explorer_pos != -1, 'index.html must contain a <script src="static/explorer.js"> tag'
+    assert explorer_pos > charts_pos, (
+        "explorer.js script tag must appear after charts.js script tag in index.html"
+    )
+
+
+def test_explorer_js_references_ids() -> None:
+    """explorer.js must reference trial-table, trial-flyout, replay-btn and replay-counter."""
+    src = (_STATIC_DIR / "explorer.js").read_text(encoding="utf-8")
+    for id_ in ("trial-table", "trial-flyout", "replay-btn", "replay-counter"):
+        assert id_ in src, f"explorer.js must reference the ID '{id_}'"
+
+
+def test_explorer_js_defines_render_explorer() -> None:
+    """explorer.js must define renderExplorer."""
+    src = (_STATIC_DIR / "explorer.js").read_text(encoding="utf-8")
+    assert "function renderExplorer" in src, "explorer.js must define renderExplorer()"
+
+
+def test_replay_js_not_in_html() -> None:
+    """index.html must not contain a <script> tag loading replay.js."""
+    assert _INDEX.exists(), f"Expected {_INDEX} to exist"
+    html = _INDEX.read_text(encoding="utf-8")
+    # Check for any script src that includes replay.js
+    srcs = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', html, re.IGNORECASE)
+    replay_srcs = [s for s in srcs if "replay.js" in s]
+    assert not replay_srcs, (
+        f"index.html must not load replay.js; found: {replay_srcs}"
     )
