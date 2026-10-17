@@ -311,6 +311,7 @@ function _renderHeatmap(recs) {
     grid.appendChild(heatmapEl);
   }
   heatmapEl.style.display = 'block';
+  heatmapEl.style.height  = '';
 
   const probes = [...new Set(attack.map(r => r._label))].sort();
 

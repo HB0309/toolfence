@@ -287,7 +287,7 @@ function _renderChips() {
 // ---------------------------------------------------------------------------
 
 function _kv(k, n) {
-  return n === 0 ? `0/${k}` : `${k}/${n}`;
+  return n === 0 ? `${k}/0` : `${k}/${n}`;
 }
 
 function renderKpis() {

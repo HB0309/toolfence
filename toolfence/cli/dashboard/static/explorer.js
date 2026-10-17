@@ -116,7 +116,7 @@ function _openFlyout(rec) {
       : `<span class="badge bg-secondary" style="opacity:0.6">pass</span>`;
 
     // arguments with provenance badges
-    const args = tc.args ?? {};
+    const args = tc.args ?? tc.params ?? {};
     const prov = tc.provenance ?? {};
     let argsHTML = '';
     for (const [argName, argVal] of Object.entries(args)) {
@@ -343,27 +343,168 @@ function _replayStep() {
   const list = document.getElementById('replay-list');
   if (list) {
     const tcs = rec.trace?.tool_calls ?? [];
-    const tcNames = tcs
-      .map(tc => (tc.name ?? '').replace(/^mcp_(galaxium|filesystem)_/i, ''))
-      .filter(Boolean);
-    const toolCallsHTML = `<div class="tool-calls mt-1" style="font-size:0.75rem;color:#8A8F98">${
-      tcNames.length
-        ? tcNames.map(n => `<span class="me-1">${_esc(n)}</span>`).join('')
-        : '<span>—</span>'
-    }</div>`;
+
+    // --- tool calls section: name + all args + full result (collapsible) ---
+    let toolCallsInner = '';
+    if (tcs.length === 0) {
+      toolCallsInner = '<span style="color:#8A8F98">—</span>';
+    } else {
+      for (const tc of tcs) {
+        const dispName = (tc.name ?? '(unknown)').replace(/^mcp_(galaxium|filesystem)_/i, '');
+        const isHeld   = tc.guard_decision === 'hold';
+        const heldMark = isHeld
+          ? `<span style="color:${VERDICT_COLORS.held};font-weight:bold;margin-left:4px">HOLD</span>`
+          : '';
+
+        // All args as key=value pairs
+        const args = tc.args ?? tc.params ?? {};
+        const argPairs = Object.entries(args)
+          .map(([k, v]) => {
+            const vs = String(v ?? '');
+            return `<div style="margin-left:8px"><span style="color:#8A8F98">${_esc(k)}</span>=<span style="color:#C9D1D9">${_esc(vs)}</span></div>`;
+          }).join('');
+
+        // Full result — use <details> so it's always accessible
+        const rawResult = String(tc.result ?? tc.error ?? '').trim();
+        let resultSnippet = '';
+        if (rawResult) {
+          const color      = tc.error ? '#D55E00' : '#8A8F98';
+          const borderColor = tc.error ? '#D55E00' : '#30363D';
+          const preview    = rawResult.slice(0, 80);
+          const needsExpand = rawResult.length > 80;
+          if (needsExpand) {
+            resultSnippet =
+              `<details style="margin-left:8px;margin-top:2px">` +
+                `<summary style="cursor:pointer;font-size:0.72rem;color:${color};font-family:monospace;` +
+                          `list-style:none;display:flex;align-items:flex-start;gap:4px">` +
+                  `<span style="color:#8A8F98;flex-shrink:0">▶</span>` +
+                  `<span style="word-break:break-all">${_esc(preview)}…</span>` +
+                `</summary>` +
+                `<pre style="margin:4px 0 0;padding:6px 8px;background:#0d1117;border-radius:3px;` +
+                      `white-space:pre-wrap;word-break:break-all;font-size:0.72rem;color:${color};` +
+                      `border-left:2px solid ${borderColor};max-height:240px;overflow-y:auto">${_esc(rawResult)}</pre>` +
+              `</details>`;
+          } else {
+            resultSnippet =
+              `<div style="margin-left:8px;font-size:0.72rem;color:${color};font-family:monospace;word-break:break-all">${_esc(rawResult)}</div>`;
+          }
+        }
+
+        toolCallsInner +=
+          `<div style="margin-bottom:4px;padding:4px 6px;background:#161b22;border-radius:3px;border-left:2px solid ${isHeld ? VERDICT_COLORS.held : '#30363D'}">` +
+            `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px">` +
+              `<span style="color:#C9D1D9;font-weight:500">${_esc(dispName)}</span>${heldMark}` +
+            `</div>` +
+            argPairs +
+            resultSnippet +
+          `</div>`;
+      }
+    }
+    const toolCallsHTML = `<div class="tool-calls mt-2" style="font-size:0.78rem">${toolCallsInner}</div>`;
+
+    // --- content block: probe injection text or final reply (always fully readable) ---
+    let contentHTML = '';
+    if (rec.kind === 'attack') {
+      // Find the tool result that carries the injection payload
+      const canary = rec.canary ?? '';
+      let injectedContent = '';
+      for (const tc of tcs) {
+        const r = String(tc.result ?? '').trim();
+        if (r && (canary && r.includes(canary) ||
+            tc.provenance && Object.values(tc.provenance).includes('untrusted'))) {
+          injectedContent = r;
+          break;
+        }
+      }
+      // Fall back to first non-empty tool result
+      if (!injectedContent) {
+        for (const tc of tcs) {
+          const r = String(tc.result ?? '').trim();
+          if (r) { injectedContent = r; break; }
+        }
+      }
+      if (injectedContent) {
+        const preview     = injectedContent.slice(0, 120);
+        const needsExpand = injectedContent.length > 120;
+        const preBlock    =
+          `<pre style="margin:4px 0 0;padding:6px 8px;background:#161b22;border-radius:3px;` +
+               `white-space:pre-wrap;word-break:break-all;font-size:0.73rem;color:#C9D1D9;` +
+               `border-left:2px solid #D55E00;overflow-y:auto;max-height:220px">${_esc(injectedContent)}</pre>`;
+        if (needsExpand) {
+          contentHTML =
+            `<details class="mt-2" style="font-size:0.75rem">` +
+              `<summary style="cursor:pointer;color:#8A8F98;font-size:0.7rem;` +
+                        `text-transform:uppercase;letter-spacing:0.04em;list-style:none;` +
+                        `display:flex;align-items:flex-start;gap:4px">` +
+                `<span style="flex-shrink:0">▶ Injected content</span>` +
+                `<span style="font-weight:normal;text-transform:none;letter-spacing:0;` +
+                       `color:#C9D1D9;font-family:monospace;word-break:break-all;` +
+                       `margin-left:4px">${_esc(preview)}…</span>` +
+              `</summary>` +
+              preBlock +
+            `</details>`;
+        } else {
+          contentHTML =
+            `<div class="mt-2" style="font-size:0.75rem">` +
+              `<span style="color:#8A8F98;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Injected content</span>` +
+              preBlock +
+            `</div>`;
+        }
+      }
+    } else {
+      // Normal trial — show the full final reply, collapsible if long
+      const reply = String(rec.trace?.final_reply ?? '').trim();
+      if (reply) {
+        const preview     = reply.slice(0, 120);
+        const needsExpand = reply.length > 120;
+        const replyBlock  =
+          `<div style="margin-top:4px;padding:6px 8px;background:#161b22;border-radius:3px;` +
+               `font-size:0.73rem;color:#C9D1D9;border-left:2px solid #009E73;` +
+               `overflow-y:auto;max-height:220px;word-break:break-word">${_esc(reply)}</div>`;
+        if (needsExpand) {
+          contentHTML =
+            `<details class="mt-2" style="font-size:0.75rem">` +
+              `<summary style="cursor:pointer;color:#8A8F98;font-size:0.7rem;` +
+                        `text-transform:uppercase;letter-spacing:0.04em;list-style:none;` +
+                        `display:flex;align-items:flex-start;gap:4px">` +
+                `<span style="flex-shrink:0">▶ Final reply</span>` +
+                `<span style="font-weight:normal;text-transform:none;letter-spacing:0;` +
+                       `color:#C9D1D9;margin-left:4px;word-break:break-word">${_esc(preview)}…</span>` +
+              `</summary>` +
+              replyBlock +
+            `</details>`;
+        } else {
+          contentHTML =
+            `<div class="mt-2" style="font-size:0.75rem">` +
+              `<span style="color:#8A8F98;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Final reply</span>` +
+              replyBlock +
+            `</div>`;
+        }
+      }
+    }
 
     const card = document.createElement('div');
-    card.className = 'replay-card p-2 mb-1 rounded';
+    card.className = 'replay-card p-2 mb-2 rounded';
     card.style.cssText = 'background:#1c2128;cursor:pointer;font-size:0.82rem';
     card.innerHTML = `
-      <div class="d-flex align-items-center gap-2">
-        <span class="text-muted">${_esc(rec.trial_id ?? '—')}</span>
-        <span>${_esc(rec._label)}</span>
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="text-muted" style="font-size:0.75rem">${_esc(rec.trial_id ?? '—')}</span>
+        <span class="fw-semibold">${_esc(rec._label)}</span>
         ${_resultBadge(rec)}
+        <span class="text-muted ms-auto" style="font-size:0.72rem">${_esc(rec.defense ?? 'none')} · ${rec.guard_on ? 'guard on' : 'guard off'}</span>
       </div>
       ${toolCallsHTML}
+      ${contentHTML}
     `;
-    card.addEventListener('click', () => _openFlyout(rec));
+    // Open flyout on click, but don't fire when the user is toggling a <details> block
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('details')) return;
+      _openFlyout(rec);
+    });
+    // Prevent <details> toggle clicks from bubbling up to the card's flyout listener
+    for (const det of card.querySelectorAll('details')) {
+      det.addEventListener('click', (e) => e.stopPropagation());
+    }
     list.insertBefore(card, list.firstChild);
   }
 }
