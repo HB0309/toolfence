@@ -1,0 +1,106 @@
+/* ToolFence dashboard — small overrides on top of Tabler 1.6.1 dark theme */
+
+/* Tabular numbers everywhere counts appear */
+.kpi-value,
+#replay-counter,
+#normal-table td,
+.verdict-legend {
+  font-variant-numeric: tabular-nums;
+}
+
+/* KPI cards */
+.kpi-card .card-body {
+  padding: 1rem 1.25rem;
+}
+.kpi-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.kpi-caption {
+  font-size: 0.78rem;
+  color: var(--tblr-muted);
+  margin-top: 0.2rem;
+}
+
+/* Filter chips */
+#filter-chips .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(86, 180, 233, 0.15);
+  border: 1px solid #56B4E9;
+  color: #56B4E9;
+  border-radius: 999px;
+  padding: 1px 10px 1px 8px;
+  font-size: 0.75rem;
+  cursor: default;
+}
+#filter-chips .chip-remove {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.85rem;
+  line-height: 1;
+  opacity: 0.7;
+}
+#filter-chips .chip-remove:hover { opacity: 1; }
+
+/* Verdict colour classes (text) */
+.verdict-leaked      { color: #D55E00 !important; }
+.verdict-held        { color: #56B4E9 !important; }
+.verdict-refused     { color: #009E73 !important; }
+.verdict-inconclusive { color: #8A8F98 !important; }
+.verdict-skipped     { color: #4B5058 !important; }
+
+/* Success bar in normal table */
+.success-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 90px;
+}
+.success-bar-bg {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: #30363D;
+  overflow: hidden;
+}
+.success-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: #009E73;
+  transition: width 0.3s;
+}
+
+/* Security grid probe list (S1 placeholder) */
+#security-grid .probe-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid #30363D;
+  font-size: 0.83rem;
+}
+#security-grid .probe-row:last-child { border-bottom: none; }
+#security-grid .probe-name {
+  flex: 1;
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 0.8rem;
+}
+#security-grid .probe-stats {
+  display: flex;
+  gap: 10px;
+}
+
+/* Replay cards */
+.replay-card {
+  border: 1px solid #30363D;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  font-size: 0.82rem;
+}
