@@ -29,9 +29,12 @@ path as an argument, ``resolve_argument`` finds the stored label and returns it.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from toolfence.contracts.trace import ProvenanceLabel
+
+log = logging.getLogger(__name__)
 
 
 # JSON punctuation characters stripped from token boundaries when extracting
@@ -196,6 +199,7 @@ class ProvenanceStore:
         label:
             The trust label inherited from the tool result that was saved there.
         """
+        log.debug("ProvenanceStore.record_file_path: %r → label=%r", path, label)
         self._file_labels[path] = label
 
     # ------------------------------------------------------------------
@@ -225,9 +229,11 @@ class ProvenanceStore:
         ProvenanceLabel
         """
         forms = _normalise(value)
+        log.debug("ProvenanceStore.resolve_argument: value=%r forms=%s", value, forms)
 
         # Priority 1 — user source always wins.
         if forms & self._user_values:
+            log.debug("ProvenanceStore: resolved %r → user", value)
             return "user"
 
         # Priority 2 & 3 — check tool-result store; prefer first-party over untrusted.
@@ -264,6 +270,7 @@ class ProvenanceStore:
                     return "untrusted"
 
         # Priority 6 — fail-closed default.
+        log.debug("ProvenanceStore: resolved %r → untrusted (fail-closed)", value)
         return "untrusted"
 
     def resolve_file_path(self, path: str) -> ProvenanceLabel | None:

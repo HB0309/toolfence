@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from typing import Any, Awaitable, Callable
 
 from toolfence.contracts.guard import HeldCallEvent
@@ -63,6 +64,8 @@ from toolfence.guard.datamark import datamark_result
 from toolfence.guard.decision import GuardDecision
 from toolfence.guard.provenance import ProvenanceStore
 from toolfence.guard.taint import SessionTaint
+
+log = logging.getLogger(__name__)
 
 # Sentinel returned to the caller when a tool call is held for confirmation.
 _HOLD_SENTINEL = "paused — needs your confirmation"
@@ -194,8 +197,10 @@ class GuardedProxy:
         # Track B calls confirm_grant.store_pending() directly when the
         # native button-click callback fires; no __source__ kwarg needed.
         # ----------------------------------------------------------------
+        log.debug("GuardedProxy.execute: tool=%r guard_on=%s", tool_name, self._guard_on)
         args_hash_for_grant = _compute_hash(params)
         if self._confirm_grant.consume_grant(tool_name, args_hash_for_grant):
+            log.info("GuardedProxy: confirmed grant consumed for tool %r — executing directly", tool_name)
             result: Any = await self._tool.execute(**params)  # type: ignore[attr-defined]
             result_str: str = str(result)
             trust_label_grant = _get_trust_label(self._surface_map, tool_name)
@@ -203,6 +208,7 @@ class GuardedProxy:
             if trust_label_grant == "untrusted":
                 self._taint.mark_tainted()
                 self._taint.increment_untrusted_reads()
+                log.debug("GuardedProxy: session tainted after reading untrusted tool %r (grant path)", tool_name)
             if self._datamark_on and trust_label_grant == "untrusted":
                 result_str = datamark_result(result_str, tool_name)
             return result_str
@@ -239,12 +245,15 @@ class GuardedProxy:
                     untrusted_arg_name = None
                 else:
                     reason = "untrusted_argument"
-                    # Find the first untrusted argument name.
                     untrusted_arg_name = next(
                         (k for k, v in prov_map.items() if v == "untrusted"),
                         None,
                     )
 
+                log.warning(
+                    "GuardedProxy: HOLD — tool=%r reason=%r untrusted_arg=%r",
+                    tool_name, reason, untrusted_arg_name,
+                )
                 event = HeldCallEvent(
                     tool_name=tool_name,
                     arguments=dict(params),
@@ -255,15 +264,18 @@ class GuardedProxy:
                 )
                 self._on_held(event)
                 if self._await_decision is None:
+                    log.debug("GuardedProxy: no await_decision — returning hold sentinel for tool %r", tool_name)
                     return _HOLD_SENTINEL
                 # await_decision provided — ask the caller and check the grant.
                 approved: bool = await self._await_decision(event)
                 if approved and self._confirm_grant.consume_grant(
                     tool_name, args_hash
                 ):
+                    log.info("GuardedProxy: decision approved and grant consumed for tool %r", tool_name)
                     # Grant matched — fall through to execute the tool.
                     pass
                 else:
+                    log.info("GuardedProxy: decision declined or grant mismatch for tool %r — returning decline sentinel", tool_name)
                     return _DECLINE_SENTINEL
 
         # ----------------------------------------------------------------
@@ -276,6 +288,7 @@ class GuardedProxy:
         # Steps 4–7 — Provenance recording, taint, datamark
         # ----------------------------------------------------------------
         trust_label = _get_trust_label(self._surface_map, tool_name)
+        log.debug("GuardedProxy: tool %r executed — trust_label=%r", tool_name, trust_label)
 
         # Record result for provenance tracking (always, regardless of guard_on).
         self._provenance.record_tool_result(tool_name, result_str, trust_label)  # type: ignore[arg-type]
@@ -284,9 +297,14 @@ class GuardedProxy:
         if trust_label == "untrusted":
             self._taint.mark_tainted()
             self._taint.increment_untrusted_reads()
+            log.debug(
+                "GuardedProxy: session tainted — untrusted read count now %d (tool=%r)",
+                self._taint.untrusted_read_count, tool_name,
+            )
 
         # Apply datamarking if requested and the tool is untrusted.
         if self._datamark_on and trust_label == "untrusted":
+            log.debug("GuardedProxy: datamarking result from untrusted tool %r", tool_name)
             result_str = datamark_result(result_str, tool_name)
 
         return result_str

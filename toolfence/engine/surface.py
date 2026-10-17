@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,8 @@ from urllib.request import urlopen
 from urllib.error import URLError
 
 from toolfence.contracts.surface import SurfaceEntry, SurfaceFile
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Sentinel SHA-256 used when a tool carries no description
@@ -369,15 +372,18 @@ class SurfaceScanner:
         ``scan_json``.  Full streamableHttp support is implemented in B-5.
         """
         endpoint = url.rstrip("/") + "/tools"
+        log.debug("SurfaceScanner.scan_mcp: GET %s", endpoint)
         try:
             with urlopen(endpoint, timeout=10) as resp:  # noqa: S310
                 body = resp.read().decode("utf-8")
         except URLError as exc:
+            log.error("scan_mcp: cannot reach MCP server at %s — %s", endpoint, exc)
             raise URLError(f"Cannot reach MCP server at {endpoint}: {exc}") from exc
 
         try:
             data = json.loads(body)
         except json.JSONDecodeError as exc:
+            log.error("scan_mcp: non-JSON response from %s — %s", endpoint, exc)
             raise ValueError(f"MCP server returned non-JSON response: {exc}") from exc
 
         raw_tools: list[dict[str, Any]] = (
@@ -418,10 +424,12 @@ class SurfaceScanner:
         for tool in tool_list:
             name: str = tool.get("name", "")
             if not name:
+                log.debug("_build_surface: skipping tool entry with empty name")
                 continue
             # Reject names that don't already match ^[a-z0-9_]+$.
             # We never rewrite names — a name that needs rewriting is wrong input.
             if not _is_valid_name(name):
+                log.warning("_build_surface: skipping tool %r — name fails ^[a-z0-9_]+$ check", name)
                 continue
 
             description: str = tool.get("description") or ""
@@ -442,6 +450,7 @@ class SurfaceScanner:
                     description_sha256=sha,
                 )
             )
+        log.info("_build_surface: built SurfaceFile with %d tool entry(ies)", len(entries))
         return SurfaceFile(version=1, tools=entries)
 
 

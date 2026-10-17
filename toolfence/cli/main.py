@@ -25,9 +25,12 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -136,11 +139,14 @@ def _cmd_scan(path: str) -> None:
     """Print a markdown table of the tools in *path*."""
     from toolfence.engine.surface import SurfaceScanner
 
+    log.info("_cmd_scan: scanning %r", path)
     try:
         surface = SurfaceScanner().scan_json(path)
     except Exception as exc:  # noqa: BLE001
+        log.error("_cmd_scan: failed to scan %r — %s", path, exc)
         print(f"Error scanning {path!r}: {exc}", file=sys.stderr)
         sys.exit(1)
+    log.info("_cmd_scan: found %d tool(s)", len(surface.tools))
 
     # Header
     print(f"Scanned {len(surface.tools)} tool(s) from {path}")
@@ -411,6 +417,10 @@ def _cmd_run(
 
     # Guard against empty matrix
     total_trials = len(attack_probes) * len(defenses) + len(normal_probes) * len(defenses)
+    log.info(
+        "_cmd_run: %d attack probe(s), %d normal probe(s), %d defense(s) → %d trial(s)",
+        len(attack_probes), len(normal_probes), len(defenses), total_trials,
+    )
     if total_trials == 0:
         print(
             "Warning: the combination of --probe/--defense/--guard filters "
@@ -441,11 +451,14 @@ def _cmd_run(
     print()
 
     # --- Run ---
+    log.info("_cmd_run: starting evaluation run %r", run_id)
     try:
         records, summary = runner.run(run_id=run_id)
     except Exception as exc:  # noqa: BLE001
+        log.error("_cmd_run: evaluation failed — %s", exc)
         print(f"Evaluation failed: {exc}", file=sys.stderr)
         sys.exit(1)
+    log.info("_cmd_run: run complete — %d record(s) written", len(records))
 
     # --- Write records ---
     out_path = Path(output_dir)
@@ -485,15 +498,19 @@ def _cmd_report(results_dir: str) -> None:
     from toolfence.engine.report import render_report
     from toolfence.engine.scoring import aggregate
 
+    log.info("_cmd_report: reading results from %r", results_dir)
     results_path = Path(results_dir)
     if not results_path.is_dir():
+        log.error("_cmd_report: directory not found: %s", results_path)
         print(f"Results directory not found: {results_path}", file=sys.stderr)
         sys.exit(1)
 
     json_files = sorted(results_path.glob("*.json"))
     if not json_files:
+        log.warning("_cmd_report: no .json files in %s", results_path)
         print(f"No .json files found in {results_path}", file=sys.stderr)
         sys.exit(1)
+    log.debug("_cmd_report: found %d JSON file(s)", len(json_files))
 
     records: list[TrialRecord] = []
     for jf in json_files:
@@ -501,11 +518,14 @@ def _cmd_report(results_dir: str) -> None:
             data = json.loads(jf.read_text(encoding="utf-8"))
             records.append(TrialRecord.model_validate(data))
         except Exception as exc:  # noqa: BLE001
+            log.warning("_cmd_report: skipping %s — %s", jf.name, exc)
             print(f"Warning: could not load {jf.name}: {exc}", file=sys.stderr)
 
     if not records:
+        log.error("_cmd_report: no valid trial records found in %s", results_path)
         print("No valid trial records found.", file=sys.stderr)
         sys.exit(1)
+    log.info("_cmd_report: loaded %d valid record(s)", len(records))
 
     # Use run_id from first record; fall back to dir name
     run_id = records[0].run_id if records else results_dir
@@ -538,8 +558,7 @@ def _cmd_ci_check(surface_path: str, live_path: "str | None") -> None:
     """Run the surface-diff CI check and exit with the result code."""
     from toolfence.cli.ci_checks import surface_diff_check
 
-    # If no live tool list supplied, compare the surface against itself.
-    # This still runs the description-hash drift check (catches hand-edits).
+    log.info("_cmd_ci_check: surface=%r live=%r", surface_path, live_path)
     if live_path is not None:
         try:
             live_data = json.loads(Path(live_path).read_text(encoding="utf-8"))
@@ -548,22 +567,25 @@ def _cmd_ci_check(surface_path: str, live_path: "str | None") -> None:
                 else live_data.get("tools", [])
             )
         except Exception as exc:  # noqa: BLE001
+            log.error("_cmd_ci_check: failed to load live tool list %r — %s", live_path, exc)
             print(f"Error loading live tool list {live_path!r}: {exc}", file=sys.stderr)
             sys.exit(1)
     else:
-        # Re-read the surface itself as the "live" list so the hash check runs.
         try:
             raw = json.loads(Path(surface_path).read_text(encoding="utf-8"))
             live_tool_list = raw.get("tools", []) if isinstance(raw, dict) else raw
         except Exception as exc:  # noqa: BLE001
+            log.error("_cmd_ci_check: failed to load surface file %r — %s", surface_path, exc)
             print(f"Error loading surface file {surface_path!r}: {exc}", file=sys.stderr)
             sys.exit(1)
 
     exit_code, message = surface_diff_check(surface_path, live_tool_list)
 
     if exit_code == 0:
+        log.info("_cmd_ci_check: PASSED — %s", message)
         print(f"CI surface-diff check passed: {message}")
     else:
+        log.warning("_cmd_ci_check: FAILED — %s", message)
         print(f"CI surface-diff check FAILED:\n{message}", file=sys.stderr)
 
     sys.exit(exit_code)

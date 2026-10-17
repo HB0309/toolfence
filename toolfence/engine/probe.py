@@ -53,10 +53,13 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import re
 import secrets
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Forbidden pattern list — payload-safety check (ENG-5)
@@ -91,7 +94,9 @@ def generate_canary() -> str:
     18
     """
     suffix = secrets.token_hex(4).upper()  # 4 bytes → 8 hex chars
-    return f"TF-CANARY-{suffix}"
+    canary = f"TF-CANARY-{suffix}"
+    log.debug("generate_canary: %s", canary)
+    return canary
 
 
 # ---------------------------------------------------------------------------
@@ -169,10 +174,12 @@ def validate_probe_file(path: str | Path) -> bool:
     See module docstring for the full list of structural and payload-safety
     rules.
     """
+    log.debug("validate_probe_file: checking %s", path)
     try:
         text = Path(path).read_text(encoding="utf-8")
         data = json.loads(text)
     except Exception:  # noqa: BLE001
+        log.warning("validate_probe_file: could not read/parse %s", path)
         return False
 
     # Rule 1: must be a dict
@@ -195,6 +202,7 @@ def validate_probe_file(path: str | Path) -> bool:
     # Rule 5: content must not match any forbidden pattern
     for pattern in _FORBIDDEN_PATTERNS:
         if pattern.search(content):
+            log.warning("validate_probe_file: forbidden pattern %r matched in %s", pattern.pattern, path)
             return False
 
     # Rule 6: probe_id must be a non-empty string

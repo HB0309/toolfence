@@ -16,9 +16,12 @@ trials are excluded from percentage denominators.
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 
 from pydantic import BaseModel
+
+log = logging.getLogger(__name__)
 
 from toolfence.contracts.trial import TrialRecord
 
@@ -117,12 +120,18 @@ def aggregate(trial_records: list[TrialRecord], run_id: str) -> ResultSummary:
     -------
     ResultSummary
     """
+    log.debug("aggregate: %d total trial(s) for run_id=%r", len(trial_records), run_id)
     # Separate attack and normal trials
     attack_trials = [t for t in trial_records if t.kind == "attack"]
     normal_trials = [t for t in trial_records if t.kind == "normal"]
+    log.debug("aggregate: %d attack, %d normal trial(s)", len(attack_trials), len(normal_trials))
 
     conditions = _aggregate_attack(attack_trials)
     normal_tasks, normal_conditions = _aggregate_normal(normal_trials)
+    log.info(
+        "aggregate: run_id=%r — %d condition(s), normal success=%s/%s",
+        run_id, len(conditions), normal_tasks.success, normal_tasks.total,
+    )
 
     return ResultSummary(
         run_id=run_id,

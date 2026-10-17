@@ -13,6 +13,10 @@ A new ``SessionTaint`` instance always starts untainted with a count of zero.
 
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger(__name__)
+
 
 class SessionTaint:
     """Session-level taint flag and untrusted-read counter.
@@ -36,6 +40,8 @@ class SessionTaint:
         Idempotent — calling multiple times has the same effect as calling once.
         Taint is never cleared once set (GRD-5).
         """
+        if not self._tainted:
+            log.debug("SessionTaint: session marked tainted")
         self._tainted = True
 
     def is_tainted(self) -> bool:
@@ -48,6 +54,7 @@ class SessionTaint:
     def increment_untrusted_reads(self) -> None:
         """Increment the session-wide count of untrusted tool results read."""
         self._untrusted_read_count += 1
+        log.debug("SessionTaint: untrusted_read_count → %d", self._untrusted_read_count)
 
     @property
     def untrusted_read_count(self) -> int:
