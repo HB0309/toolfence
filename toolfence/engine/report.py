@@ -16,7 +16,11 @@ Report structure
 
 from __future__ import annotations
 
+import logging
+
 from toolfence.engine.scoring import DISCLAIMER, ConditionSummary, ResultSummary
+
+log = logging.getLogger(__name__)
 
 
 def render_report(summary: ResultSummary) -> str:
@@ -33,6 +37,7 @@ def render_report(summary: ResultSummary) -> str:
         Multi-line markdown.  The last non-empty line is the ENG-8 disclaimer
         as a blockquote.
     """
+    log.info("render_report: rendering report for run_id=%r, total_trials=%d", summary.run_id, summary.total_trials)
     lines: list[str] = []
 
     # ------------------------------------------------------------------

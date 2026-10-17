@@ -15,6 +15,7 @@ May import from ``toolfence.engine``, ``toolfence.contracts``,
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,8 @@ from toolfence.engine.surface import (
     suggest_action_class,
 )
 from toolfence.integration.installer import verify_guard_invariant
+
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -62,12 +65,14 @@ def surface_diff_check(
         and optionally ``"description"`` (str), ``"method"`` (str),
         ``"route"`` (str).
     """
+    log.info("surface_diff_check: comparing %s against %d live tool(s)", surface_path, len(live_tool_list))
     surface_path = Path(surface_path)
     try:
         surface = SurfaceFile.model_validate(
             json.loads(surface_path.read_text(encoding="utf-8"))
         )
     except Exception as exc:  # noqa: BLE001
+        log.error("surface_diff_check: failed to load surface file %s — %s", surface_path, exc)
         return 1, f"Failed to load surface file {surface_path}: {exc}"
 
     stored_names = {entry.name for entry in surface.tools}
@@ -96,6 +101,10 @@ def surface_diff_check(
                 f"surface has '{stored}', live heuristic suggests '{suggested}'"
             )
         elif suggested != stored:
+            log.debug(
+                "surface_diff_check: '%s' stored as '%s', heuristic suggests '%s' (reviewed override — ok)",
+                name, stored, suggested,
+            )
             print(
                 f"Warning: '{name}' stored as '{stored}', "
                 f"heuristic suggests '{suggested}' (reviewed override — ok)",
@@ -110,7 +119,9 @@ def surface_diff_check(
         )
 
     if findings:
+        log.warning("surface_diff_check: %d finding(s):\n%s", len(findings), "\n".join(findings))
         return 1, "\n".join(findings)
+    log.info("surface_diff_check: no findings — surface is clean")
     return 0, "ok"
 
 

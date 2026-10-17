@@ -39,6 +39,10 @@ be wrapped again with the dangerous tags inside safely escaped.
 
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Tag constants
 # Outer: copied verbatim from nanobot/runtime_context.py (lines 17-18).
@@ -95,6 +99,7 @@ def datamark_result(result_str: str, tool_name: str) -> str:
     str
         The wrapped string.
     """
+    log.debug("datamark_result: wrapping result from tool %r", tool_name)
     safe_content = _escape_content(result_str)
     inner_tag = _TOOLFENCE_TAG_TEMPLATE.format(tool_name=tool_name)
     return (

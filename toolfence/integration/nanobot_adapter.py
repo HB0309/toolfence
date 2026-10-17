@@ -16,6 +16,7 @@ import asyncio
 import concurrent.futures
 import ipaddress
 import json
+import logging
 import shutil
 import tempfile
 import threading
@@ -24,6 +25,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+
+log = logging.getLogger(__name__)
 
 from toolfence.contracts.guard import HeldCallEvent
 from toolfence.contracts.surface import SurfaceFile
@@ -120,8 +123,7 @@ def _run_on_loop(coro: Any) -> Any:
     try:
         result: Any = future.result(timeout=_TURN_TIMEOUT_S)
     except concurrent.futures.TimeoutError:
-        # Cancel the coroutine on the loop so it does not keep running and
-        # consuming resources (open sockets, workspace dirs, etc.).
+        log.warning("_run_on_loop: turn timed out after %.0f s — cancelling coroutine", _TURN_TIMEOUT_S)
         future.cancel()
         result = None
     return result
@@ -563,6 +565,10 @@ class NanobotAdapter:
         in-flight coroutine is cancelled on the persistent loop and an error
         Trace is returned instead of letting the exception propagate.
         """
+        log.info(
+            "NanobotAdapter.run_turn: starting turn (defense=%r, channel=%r, guard_on=%s)",
+            defense, self._channel, self._guard_on,
+        )
         row_id: int | None = None
         # Resolve injection config — support instances built via __new__ that
         # only have the legacy _galaxium_db_path/_review_body attributes.
@@ -593,14 +599,17 @@ class NanobotAdapter:
                 )
             trace = _run_on_loop(self._async_run_turn(prompt, defense))
             if trace is None:
-                # _run_on_loop returns None only when the future timed out and
-                # was cancelled.  Build a minimal error Trace so the caller
-                # always receives a schema-valid object.
+                log.error("NanobotAdapter.run_turn: turn timed out — returning error Trace")
                 timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 session_key = f"eval:{self._run_id}:{id(self):x}"
                 trace = _error_trace(
                     self._run_id, session_key, "unknown", timestamp,
                     _host_from_config(self._config_path),
+                )
+            else:
+                log.info(
+                    "NanobotAdapter.run_turn: done (status=%r, tool_calls=%d)",
+                    trace.status, len(trace.tool_calls),
                 )
             return trace
         finally:
@@ -676,7 +685,8 @@ class NanobotAdapter:
                     tool_registry=tools,
                 )
 
-            except Exception:  # noqa: BLE001
+            except Exception as _setup_exc:  # noqa: BLE001
+                log.error("NanobotAdapter._async_run_turn: setup failed — %s", _setup_exc)
                 return _error_trace(self._run_id, session_key, model, timestamp, host)
 
             # ----------------------------------------------------------------
@@ -748,7 +758,8 @@ class NanobotAdapter:
                     )
                     status = raw_status if raw_status != "ok" else _status_from_hook(hook)
 
-            except Exception:  # noqa: BLE001
+            except Exception as _run_exc:  # noqa: BLE001
+                log.error("NanobotAdapter._async_run_turn: run phase failed — %s", _run_exc)
                 status = "error"
             finally:
                 try:

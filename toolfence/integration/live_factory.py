@@ -30,6 +30,7 @@ runtime (inside closures / methods), but must not import it at module level.
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import sqlite3
 import tempfile
@@ -37,6 +38,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from toolfence.contracts.profile import TargetProfile
@@ -106,25 +109,30 @@ def check_galaxium_health(url: str = "http://localhost:8001/") -> None:
         If the request fails (connection error, timeout) or returns a non-2xx
         HTTP status code.
     """
+    log.debug("check_galaxium_health: pinging %s", url)
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:
             status: int = resp.status
     except urllib.error.URLError as exc:
+        log.error("check_galaxium_health: unreachable — %s", exc)
         raise RuntimeError(
             f"Galaxium backend not reachable at {url} — "
             f"start the backend before running live eval ({exc.reason})"
         ) from exc
     except Exception as exc:  # noqa: BLE001
+        log.error("check_galaxium_health: error — %s", exc)
         raise RuntimeError(
             f"Galaxium backend not reachable at {url} — "
             f"start the backend before running live eval ({exc})"
         ) from exc
 
     if not (200 <= status < 300):
+        log.error("check_galaxium_health: non-2xx HTTP %d at %s", status, url)
         raise RuntimeError(
             f"Galaxium backend returned HTTP {status} at {url} — "
             "expected 2xx"
         )
+    log.info("check_galaxium_health: %s is healthy (HTTP %d)", url, status)
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +163,7 @@ class _DbBackupAdapter:
 
     def run_turn(self, prompt: str, defense: str) -> "Trace":
         """Back up DB, run the inner adapter, then restore DB regardless of outcome."""
+        log.debug("_DbBackupAdapter.run_turn: backing up %s → %s", self._db_path, self._bak_path)
         # --- Backup ---
         src = sqlite3.connect(self._db_path)
         dst = sqlite3.connect(self._bak_path)
@@ -166,7 +175,12 @@ class _DbBackupAdapter:
 
         # --- Run trial, restore DB even on exception ---
         try:
-            return self._inner.run_turn(prompt, defense)
+            result = self._inner.run_turn(prompt, defense)
+            log.debug("_DbBackupAdapter.run_turn: inner turn complete, restoring DB")
+            return result
+        except Exception:
+            log.warning("_DbBackupAdapter.run_turn: inner turn raised exception, restoring DB")
+            raise
         finally:
             src2 = sqlite3.connect(self._bak_path)
             dst2 = sqlite3.connect(self._db_path)
@@ -256,25 +270,30 @@ def check_target_health(url: str) -> None:
     RuntimeError
         If the request fails or returns a non-2xx HTTP status code.
     """
+    log.debug("check_target_health: pinging %s", url)
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:
             status: int = resp.status
     except urllib.error.URLError as exc:
+        log.error("check_target_health: unreachable — %s", exc)
         raise RuntimeError(
             f"Target backend not reachable at {url} — "
             f"start the backend before running live eval ({exc.reason})"
         ) from exc
     except Exception as exc:  # noqa: BLE001
+        log.error("check_target_health: error — %s", exc)
         raise RuntimeError(
             f"Target backend not reachable at {url} — "
             f"start the backend before running live eval ({exc})"
         ) from exc
 
     if not (200 <= status < 300):
+        log.error("check_target_health: non-2xx HTTP %d at %s", status, url)
         raise RuntimeError(
             f"Target backend returned HTTP {status} at {url} — "
             "expected 2xx"
         )
+    log.info("check_target_health: %s is healthy (HTTP %d)", url, status)
 
 
 # ---------------------------------------------------------------------------

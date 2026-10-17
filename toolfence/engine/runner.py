@@ -30,9 +30,12 @@ This module belongs to ``toolfence/engine/`` and may import from
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from toolfence.contracts.trace import Trace
@@ -272,6 +275,11 @@ class EvaluationRunner:
         """
         records: list[TrialRecord] = []
         counter = 0
+        log.info(
+            "run_attack: %d probe(s) × %d defense(s) → %d trial(s), run_id=%r",
+            len(self._attack_probes), len(self._defenses),
+            len(self._attack_probes) * len(self._defenses), run_id,
+        )
 
         for probe_dict, adapter in self._attack_probes:
             channel: str = probe_dict["channel"]
@@ -309,6 +317,16 @@ class EvaluationRunner:
                 verdict = assign_verdict(trace, canary)
                 in_args = _canary_in_args(trace, canary)
 
+                cards = _count_held(trace)
+                log.info(
+                    "run_attack: trial_id=%r verdict=%r canary_in_args=%s cards_shown=%d",
+                    trial_id, verdict, in_args, cards,
+                )
+                if verdict == "leaked":
+                    log.warning(
+                        "run_attack: LEAKED trial %r — canary found in probe_id=%r defense=%r guard_on=%s",
+                        trial_id, probe_id, defense.name, defense.guard_on,
+                    )
                 records.append(
                     TrialRecord(
                         trial_id=trial_id,
@@ -323,10 +341,11 @@ class EvaluationRunner:
                         task_success=None,
                         trace=trace,
                         canary_in_args=in_args,
-                        cards_shown=_count_held(trace),
+                        cards_shown=cards,
                     )
                 )
 
+        log.debug("run_attack: complete — %d record(s) produced", len(records))
         return records
 
     # ------------------------------------------------------------------
@@ -359,6 +378,11 @@ class EvaluationRunner:
         # We use a separate counter here; call-site can offset if needed.
         base_offset = len(self._attack_probes) * len(self._defenses)
         counter = base_offset
+        log.info(
+            "run_normal: %d probe(s) × %d defense(s) → %d trial(s), run_id=%r",
+            len(self._normal_probes), len(self._defenses),
+            len(self._normal_probes) * len(self._defenses), run_id,
+        )
 
         for probe_dict, adapter in self._normal_probes:
             prompt: str = probe_dict["content"]
@@ -376,6 +400,15 @@ class EvaluationRunner:
                 else:
                     trace = adapter.run_turn(prompt, defense.name)
                 task_success = evaluate_normal_trial(trace, goal_tool)
+                log.info(
+                    "run_normal: trial_id=%r task_success=%s defense=%r guard_on=%s",
+                    trial_id, task_success, defense.name, defense.guard_on,
+                )
+                if task_success is False:
+                    log.warning(
+                        "run_normal: task FAILED for trial %r (goal_tool=%r)",
+                        trial_id, goal_tool,
+                    )
 
                 records.append(
                     TrialRecord(
@@ -396,6 +429,7 @@ class EvaluationRunner:
                     )
                 )
 
+        log.debug("run_normal: complete — %d record(s) produced", len(records))
         return records
 
     # ------------------------------------------------------------------
@@ -419,8 +453,13 @@ class EvaluationRunner:
             All 18 records (12 attack + 6 normal by default) and the
             ``ResultSummary`` produced by ``aggregate``.
         """
+        log.info("EvaluationRunner.run: starting full run for run_id=%r", run_id)
         attack_records = self.run_attack(run_id)
         normal_records = self.run_normal(run_id)
         all_records = attack_records + normal_records
         summary = aggregate(all_records, run_id)
+        log.info(
+            "EvaluationRunner.run: complete — %d total record(s) for run_id=%r",
+            len(all_records), run_id,
+        )
         return all_records, summary

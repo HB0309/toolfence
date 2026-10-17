@@ -14,7 +14,11 @@ This module has zero nanobot imports and zero ``toolfence.engine`` imports.
 
 from __future__ import annotations
 
+import logging
+
 from toolfence.contracts.guard import HeldCallEvent
+
+log = logging.getLogger(__name__)
 
 # Standard confirm buttons — always the same regardless of reason.
 _BUTTONS: list[list[str]] = [["Allow", "Decline"]]
@@ -41,6 +45,7 @@ def build_card_message(event: HeldCallEvent) -> tuple[str, list[list[str]]]:
         If ``event.reason`` is not one of the three known reason strings.
     """
     reason = event.reason
+    log.info("build_card_message: tool=%r reason=%r", event.tool_name, reason)
 
     if reason == "irreversible":
         text = "This action is irreversible. Allow or Decline?"
@@ -54,6 +59,8 @@ def build_card_message(event: HeldCallEvent) -> tuple[str, list[list[str]]]:
         text = f"The value of '{arg}' came from an untrusted source. Allow or Decline?"
 
     else:
+        log.error("build_card_message: unknown reason %r for tool %r", reason, event.tool_name)
         raise ValueError(f"Unknown HeldCallEvent reason: {reason!r}")
 
+    log.debug("build_card_message: card text=%r", text)
     return text, _BUTTONS
