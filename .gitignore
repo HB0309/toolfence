@@ -18,3 +18,5 @@ profiles/filesystem-surface.draft.json
 
 results/live/
 holds.db
+
+.venv-*/
