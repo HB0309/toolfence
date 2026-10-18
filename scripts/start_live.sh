@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# Start Java hold service (8082), Galaxium backend (8001), then the live dashboard (8080).
+set -uo pipefail
+cd "$(dirname "$0")/.."
+ROOT=$PWD
+HOLD=targets/galaxium/booking_system_inventory_hold_service
+BACK=targets/galaxium/booking_system_backend
 
-nohup java -Dserver.port=8082 -jar targets/galaxium/booking_system_inventory_hold_service/target/inventory-hold-service-1.0.0.jar > /tmp/java.log 2>&1 &
-(cd targets/galaxium/booking_system_backend && JAVA_SERVICE_URL=http://localhost:8082 nohup python server.py > /tmp/galaxium.log 2>&1 &)
-nohup toolfence serve --host 0.0.0.0 --port 8080 --live
+(cd "$HOLD" && setsid nohup java -jar target/inventory-hold-service-1.0.0.jar --server.port=8082 > /tmp/java.log 2>&1 &)
+(cd "$BACK" && JAVA_SERVICE_URL=http://localhost:8082 setsid nohup "$ROOT/.venv-galaxium/bin/python" server.py > /tmp/galaxium.log 2>&1 &)
+
+for _ in $(seq 1 90); do
+  curl -fs http://localhost:8001/ > /dev/null && curl -fs http://localhost:8082/api/v1/health > /dev/null && break
+  sleep 2
+done
+
+setsid nohup "$ROOT/.venv-live/bin/toolfence" serve --host 0.0.0.0 --port 8080 --live > /tmp/dashboard.log 2>&1 &
+echo "ToolFence dashboard starting on port 8080 (logs: /tmp/java.log /tmp/galaxium.log /tmp/dashboard.log)"
