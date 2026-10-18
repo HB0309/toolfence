@@ -36,44 +36,21 @@ ibmcloud ce project select --name toolfence
 
 ---
 
-## 2. Build and push the container image
+## 2. Deploy from source (one command)
 
-The dashboard is served by `python -m toolfence serve` (stdlib `http.server` only — no extra
-dependencies beyond what `pip install -e .` provides). Build and push a container image:
-
-```bash
-# From the repo root
-ibmcloud ce build create \
-  --name toolfence-dashboard-build \
-  --source . \
-  --image us.icr.io/<YOUR_NAMESPACE>/toolfence-dashboard:latest \
-  --strategy buildpacks \
-  --size small
-
-ibmcloud ce build run --name toolfence-dashboard-build
-```
-
----
-
-## 3. Create the application
+The repo root contains a `Dockerfile` that builds and runs the read-only dashboard. Code
+Engine's build-from-source feature clones the repo, runs the Dockerfile, and deploys in a
+single command — no separate image registry or push step required.
 
 ```bash
 ibmcloud ce application create \
   --name toolfence-dashboard \
-  --image us.icr.io/<YOUR_NAMESPACE>/toolfence-dashboard:latest \
+  --build-source https://github.com/<YOUR_ORG>/toolfence \
+  --strategy dockerfile \
   --port 8080 \
   --min-scale 0 \
-  --max-scale 2 \
   --cpu 0.25 \
-  --memory 0.5G \
-  --command python \
-  --argument -m \
-  --argument toolfence \
-  --argument serve \
-  --argument --host \
-  --argument 0.0.0.0 \
-  --argument --port \
-  --argument 8080
+  --memory 0.5G
 ```
 
 > **Note:** `--min-scale 0` enables serverless scaling — the app scales to zero when not in
@@ -82,6 +59,9 @@ ibmcloud ce application create \
 > **Do NOT add `--env OPENROUTER_API_KEY=...` or any other secret.** The dashboard reads
 > only pre-committed JSON files from `results/` — it makes no outbound calls to model
 > providers or any external service.
+>
+> Replace `<YOUR_ORG>` with your GitHub organisation or username. For a private repo, add
+> `--build-git-token <GITHUB_PAT>` (a read-only token is sufficient).
 
 ---
 

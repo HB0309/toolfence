@@ -1,0 +1,10 @@
+.env
+.git
+targets/
+.venv*
+results/live/
+holds.db
+profiles/fs-workdir/
+**/__pycache__
+.pytest_cache
+bob_sessions/
