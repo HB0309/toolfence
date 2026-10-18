@@ -324,7 +324,7 @@ class _ToolEvent:
 # The class body is defined once inside a factory that runs inside
 # _async_run_turn after the nanobot import has succeeded.
 
-def _make_capture_hook_class() -> type:
+def _make_capture_hook_class(on_event: Callable[[dict], None] | None = None) -> type:
     """Return the _CaptureHook class after nanobot has been imported."""
     from nanobot.agent.hook import AgentHook  # deferred — nanobot required
 
@@ -345,6 +345,7 @@ def _make_capture_hook_class() -> type:
             self._starts: dict[str, float] = {}
             # tool_call.id → provenance map captured in before_execute_tool
             self._pending_prov: dict[str, dict[str, str]] = {}
+            self._on_event = on_event
 
         async def before_execute_tool(self, context: Any, tool_call: Any, tool: Any, params: Any) -> None:
             self._starts[tool_call.id] = time.monotonic()
@@ -354,14 +355,14 @@ def _make_capture_hook_class() -> type:
             }
 
         async def after_execute_tool(self, context: Any, tool_call: Any, tool: Any, params: Any, result: Any) -> None:
-            from toolfence.guard.proxy import _HOLD_SENTINEL  # guard/ import is allowed
+            from toolfence.guard.proxy import _DECLINE_SENTINEL, _HOLD_SENTINEL  # guard/ import is allowed
 
             elapsed = int((time.monotonic() - self._starts.pop(tool_call.id, time.monotonic())) * 1000)
             result_str = str(result) if result is not None else None
             prov = self._pending_prov.pop(tool_call.id, {})
-            guard_decision = "hold" if result_str == _HOLD_SENTINEL else "pass"
+            guard_decision = "hold" if result_str in (_HOLD_SENTINEL, _DECLINE_SENTINEL) else "pass"
 
-            self.tool_events.append(_ToolEvent(
+            ev = _ToolEvent(
                 name=tool_call.name,
                 params=dict(params) if params else {},
                 result=result_str,
@@ -369,12 +370,18 @@ def _make_capture_hook_class() -> type:
                 duration_ms=elapsed,
                 provenance=prov,
                 guard_decision=guard_decision,
-            ))
+            )
+            self.tool_events.append(ev)
+            if self._on_event is not None:
+                try:
+                    self._on_event({"name": ev.name, "guard_decision": ev.guard_decision})
+                except Exception:  # noqa: BLE001
+                    pass
 
         async def on_execute_tool_error(self, context: Any, tool_call: Any, tool: Any, params: Any, error: Any) -> None:
             elapsed = int((time.monotonic() - self._starts.pop(tool_call.id, time.monotonic())) * 1000)
             prov = self._pending_prov.pop(tool_call.id, {})
-            self.tool_events.append(_ToolEvent(
+            ev = _ToolEvent(
                 name=tool_call.name,
                 params=dict(params) if params else {},
                 result=None,
@@ -382,7 +389,13 @@ def _make_capture_hook_class() -> type:
                 duration_ms=elapsed,
                 provenance=prov,
                 guard_decision="pass",
-            ))
+            )
+            self.tool_events.append(ev)
+            if self._on_event is not None:
+                try:
+                    self._on_event({"name": ev.name, "guard_decision": ev.guard_decision})
+                except Exception:  # noqa: BLE001
+                    pass
 
         async def after_run(self, context: Any) -> None:
             self.usage = context.usage
@@ -546,6 +559,7 @@ class NanobotAdapter:
         on_held: Callable[[HeldCallEvent], None] | None = None,
         api_key: str | None = None,
         await_decision: Callable[[HeldCallEvent], Awaitable[bool]] | None = None,
+        on_tool_event: Callable[[dict], None] | None = None,
     ) -> None:
         self._config_path = config_path
         self._surface_path = surface_path
@@ -569,6 +583,7 @@ class NanobotAdapter:
         self._on_held = on_held
         self._api_key = api_key
         self._await_decision = await_decision
+        self._on_tool_event = on_tool_event
         # Keep _galaxium_db_path for backward compat (tests that patch it directly)
         self._galaxium_db_path = galaxium_db_path
 
@@ -775,7 +790,9 @@ class NanobotAdapter:
                     provenance.record_user_message(prompt)
                     verify_guard_invariant(tools)
 
-                    CaptureHook = _make_capture_hook_class()
+                    CaptureHook = _make_capture_hook_class(
+                        on_event=getattr(self, "_on_tool_event", None)
+                    )
                     hook = CaptureHook(provenance)
 
                     response, raw_status = await _run_with_timeout(

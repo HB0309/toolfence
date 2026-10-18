@@ -1,4 +1,4 @@
-/* live.js — L-3 live panel logic
+/* live.js — L-6c live panel logic
  * Plain JS, relative URLs only, textContent only, no local storage.
  */
 (function () {
@@ -14,6 +14,7 @@
   var keyMsg     = document.getElementById('live-key-msg');
   var guardSel   = document.getElementById('live-guard');
   var defenseSel = document.getElementById('live-defense');
+  var probeSel   = document.getElementById('live-probe');
   var promptTA   = document.getElementById('live-prompt');
   var sendBtn    = document.getElementById('live-send');
   var cardDiv    = document.getElementById('live-card');
@@ -62,7 +63,7 @@
         keyMsg.textContent = data.message || '';
         if (data.ok) {
           liveKey = key;
-          promptTA.disabled = false;
+          promptTA.disabled = probeSel.value !== '';
           sendBtn.disabled = false;
         } else {
           liveKey = null;
@@ -76,12 +77,19 @@
       });
   });
 
+  /* Probe select — enable/disable prompt */
+  probeSel.addEventListener('change', function () {
+    if (liveKey) {
+      promptTA.disabled = probeSel.value !== '';
+    }
+  });
+
   /* Send button */
   sendBtn.addEventListener('click', function () {
     sendBtn.disabled = true;
     outPre.textContent = 'Running\u2026';
 
-    /* Poll for pending confirm cards */
+    /* Poll for pending confirm cards and stream progress */
     pollInterval = setInterval(function () {
       fetch('api/live/pending')
         .then(function (r) { return r.json(); })
@@ -93,18 +101,23 @@
           } else {
             cardDiv.classList.add('d-none');
           }
+          var progress = data && data.progress ? data.progress : [];
+          outPre.textContent = 'Running\u2026\n' + progress.map(function (p) {
+            return p.name + ' | ' + p.guard_decision;
+          }).join('\n');
         })
         .catch(function () {});
     }, 1000);
 
-    var prompt  = promptTA.value;
+    var probe   = probeSel.value;
+    var prompt  = probe !== '' ? '' : promptTA.value;
     var guard   = guardSel.value === 'true';
     var defense = defenseSel.value;
 
     fetch('api/live/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: liveKey, prompt: prompt, guard: guard, defense: defense })
+      body: JSON.stringify({ key: liveKey, prompt: prompt, guard: guard, defense: defense, probe: probe })
     })
       .then(function (r) {
         clearInterval(pollInterval);
@@ -134,6 +147,7 @@
             lines.push((c.name || '') + ' | ' + (c.guard_decision || '') + ' | ' + detail);
           }
           outPre.textContent = lines.join('\n');
+          return loadData().then(function () { setFilter('run', 'live'); });
         });
       })
       .catch(function (err) {

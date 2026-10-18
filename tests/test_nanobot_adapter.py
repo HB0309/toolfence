@@ -525,7 +525,7 @@ def _run_async_turn_with_mocks(
     monkeypatch.setattr(_mod, "_mcp_urls_are_all_loopback", lambda _: False)
 
     # Replace _make_capture_hook_class with our stub.
-    monkeypatch.setattr(_mod, "_make_capture_hook_class", lambda: fake_hook_cls)
+    monkeypatch.setattr(_mod, "_make_capture_hook_class", lambda on_event=None: fake_hook_cls)
 
     # No-op install_guard and verify_guard_invariant: patch the names in
     # nanobot_adapter's own namespace (they are module-level imports there,
@@ -927,3 +927,109 @@ def test_live_json_no_env_ref_and_empty_api_key():
         .get("apiKey", None)
     )
     assert api_key == "", f"apiKey must be empty string, got {api_key!r}"
+
+
+# ---------------------------------------------------------------------------
+# Test L-6a — _CaptureHook: DECLINE_SENTINEL, normal result, on_tool_event
+# ---------------------------------------------------------------------------
+
+
+def test_capture_hook_decline_sentinel_records_hold():
+    """A hook whose result equals _DECLINE_SENTINEL records guard_decision='hold'."""
+    import asyncio
+    from unittest.mock import MagicMock
+    from toolfence.guard.proxy import _DECLINE_SENTINEL
+    from toolfence.integration.nanobot_adapter import _make_capture_hook_class
+    from toolfence.guard.provenance import ProvenanceStore
+
+    # We need to instantiate _CaptureHook without nanobot on sys.path.
+    # Fake the AgentHook base class so the import in the factory succeeds.
+    import sys
+    from types import SimpleNamespace
+    fake_hook_base = type("AgentHook", (), {"__init__": lambda self: None})
+    fake_nanobot_hook = SimpleNamespace(AgentHook=fake_hook_base)
+    sys.modules.setdefault("nanobot", MagicMock())
+    sys.modules.setdefault("nanobot.agent", MagicMock())
+    sys.modules["nanobot.agent.hook"] = fake_nanobot_hook
+
+    CaptureHook = _make_capture_hook_class()
+    hook = CaptureHook(ProvenanceStore())
+
+    tool_call = SimpleNamespace(id="tc-1", name="cancel_booking")
+    params = {}
+
+    async def _run():
+        await hook.after_execute_tool(None, tool_call, None, params, _DECLINE_SENTINEL)
+
+    asyncio.run(_run())
+
+    assert len(hook.tool_events) == 1
+    assert hook.tool_events[0].guard_decision == "hold", (
+        f"Expected 'hold' for _DECLINE_SENTINEL, got {hook.tool_events[0].guard_decision!r}"
+    )
+
+
+def test_capture_hook_normal_result_records_pass():
+    """A hook whose result is a normal string records guard_decision='pass'."""
+    import asyncio
+    from types import SimpleNamespace
+    import sys
+    from unittest.mock import MagicMock
+    from toolfence.integration.nanobot_adapter import _make_capture_hook_class
+    from toolfence.guard.provenance import ProvenanceStore
+
+    fake_hook_base = type("AgentHook", (), {"__init__": lambda self: None})
+    fake_nanobot_hook = SimpleNamespace(AgentHook=fake_hook_base)
+    sys.modules.setdefault("nanobot", MagicMock())
+    sys.modules.setdefault("nanobot.agent", MagicMock())
+    sys.modules["nanobot.agent.hook"] = fake_nanobot_hook
+
+    CaptureHook = _make_capture_hook_class()
+    hook = CaptureHook(ProvenanceStore())
+
+    tool_call = SimpleNamespace(id="tc-2", name="get_flights")
+    params = {}
+
+    async def _run():
+        await hook.after_execute_tool(None, tool_call, None, params, "some normal result")
+
+    asyncio.run(_run())
+
+    assert len(hook.tool_events) == 1
+    assert hook.tool_events[0].guard_decision == "pass", (
+        f"Expected 'pass' for normal result, got {hook.tool_events[0].guard_decision!r}"
+    )
+
+
+def test_capture_hook_on_tool_event_called_once_per_event():
+    """on_tool_event is called exactly once per tool event."""
+    import asyncio
+    from types import SimpleNamespace
+    import sys
+    from unittest.mock import MagicMock
+    from toolfence.integration.nanobot_adapter import _make_capture_hook_class
+    from toolfence.guard.provenance import ProvenanceStore
+
+    fake_hook_base = type("AgentHook", (), {"__init__": lambda self: None})
+    fake_nanobot_hook = SimpleNamespace(AgentHook=fake_hook_base)
+    sys.modules.setdefault("nanobot", MagicMock())
+    sys.modules.setdefault("nanobot.agent", MagicMock())
+    sys.modules["nanobot.agent.hook"] = fake_nanobot_hook
+
+    events: list[dict] = []
+    CaptureHook = _make_capture_hook_class(on_event=events.append)
+    hook = CaptureHook(ProvenanceStore())
+
+    tc1 = SimpleNamespace(id="tc-a", name="tool_alpha")
+    tc2 = SimpleNamespace(id="tc-b", name="tool_beta")
+
+    async def _run():
+        await hook.after_execute_tool(None, tc1, None, {}, "result-a")
+        await hook.on_execute_tool_error(None, tc2, None, {}, RuntimeError("boom"))
+
+    asyncio.run(_run())
+
+    assert len(events) == 2, f"Expected 2 events, got {len(events)}: {events}"
+    assert events[0] == {"name": "tool_alpha", "guard_decision": "pass"}
+    assert events[1] == {"name": "tool_beta", "guard_decision": "pass"}
+

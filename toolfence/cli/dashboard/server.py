@@ -86,7 +86,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 self._not_found()
                 return
             pending = self.live.gate.pending()  # type: ignore[union-attr]
-            body = json.dumps({"pending": pending}).encode("utf-8")
+            progress = list(self.live.progress)  # type: ignore[union-attr]
+            body = json.dumps({"pending": pending, "progress": progress}).encode("utf-8")
             self._send_json(body)
         else:
             self._not_found()
@@ -151,14 +152,18 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         prompt: str = body.get("prompt", "") or ""
         guard = body.get("guard", True)
         defense: str = body.get("defense", "none") or "none"
+        probe: str = body.get("probe", "") or ""
 
         if not key.strip():
             self._bad_request()
             return
-        if not prompt.strip():
+        if probe not in ("", "0", "1", "2"):
             self._bad_request()
             return
-        if len(prompt) > 2000:
+        if probe == "" and not prompt.strip():
+            self._bad_request()
+            return
+        if probe == "" and len(prompt) > 2000:
             self._bad_request()
             return
         if defense not in ("none", "datamarking", "instructional"):
@@ -168,7 +173,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         guard_on: bool = bool(guard)
 
         try:
-            trace = self.live.run(key, prompt, guard_on, defense)  # type: ignore[union-attr]
+            result = self.live.run(key, prompt, guard_on, defense, probe)  # type: ignore[union-attr]
         except LiveSession.Busy:
             self.send_response(409)
             self.end_headers()
@@ -183,7 +188,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self.wfile.write(err_body)
             return
 
-        resp_body = json.dumps({"trace": trace}).encode("utf-8")
+        resp_body = json.dumps(result).encode("utf-8")
         self._send_json(resp_body)
 
     def _handle_live_decide(self, body: dict) -> None:
@@ -382,7 +387,7 @@ def make_server(
     if live:
         from toolfence.cli.dashboard.live import LiveSession
 
-        session = LiveSession()
+        session = LiveSession(results_dir)
         attrs["live_enabled"] = True
         attrs["live"] = session
 

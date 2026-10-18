@@ -10,12 +10,15 @@ stdlib + toolfence imports only — no nanobot at module level.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import threading
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +77,7 @@ class WebGate:
         self._ready = threading.Event()
         self._event: Any = None   # HeldCallEvent | None
         self._answer: bool | None = None
+        self.held_count: int = 0
 
     def on_held(self, event: Any) -> None:
         """Called by Guard when a tool call is held."""
@@ -81,6 +85,12 @@ class WebGate:
             self._event = event
             self._ready.clear()
             self._answer = None
+            self.held_count += 1
+
+    def reset(self) -> None:
+        """Reset held_count to 0 before a new run."""
+        with self._lock:
+            self.held_count = 0
 
     async def await_decision(self, event: Any) -> bool:
         """Await the user's Allow/Decline for up to *timeout* seconds."""
@@ -127,8 +137,10 @@ class LiveSession:
     class Busy(Exception):
         """Raised when a run is already in progress."""
 
-    def __init__(self) -> None:
+    def __init__(self, results_dir: Path) -> None:
         self.gate = WebGate()
+        self.results_dir = results_dir
+        self.progress: list[dict] = []
         self._busy = threading.Lock()
 
     def run(
@@ -137,8 +149,22 @@ class LiveSession:
         prompt: str,
         guard_on: bool,
         defense: str,
+        probe: str = "",
     ) -> dict:
-        """Run one live turn and return the Trace as a dict.
+        """Run one live turn and return a dict with trace and record.
+
+        Parameters
+        ----------
+        key:
+            OpenRouter API key.
+        prompt:
+            Free-form user prompt (used only when probe == "").
+        guard_on:
+            Whether Guard is active.
+        defense:
+            Defense label ("none", "datamarking", "instructional").
+        probe:
+            "" for free-form, or "0"/"1"/"2" to run an attack probe.
 
         Raises
         ------
@@ -151,30 +177,97 @@ class LiveSession:
             raise LiveSession.Busy
 
         try:
-            from toolfence.integration.live_factory import check_target_health
-            from toolfence.integration.nanobot_adapter import NanobotAdapter
+            from toolfence.contracts.profile import TargetProfile
+            from toolfence.contracts.surface import SurfaceFile
+            from toolfence.contracts.trial import TrialRecord
+            from toolfence.engine.runner import DefenseConfig, EvaluationRunner
+            from toolfence.integration.live_factory import (
+                check_target_health,
+                make_live_factory_from_profile,
+            )
 
             check_target_health("http://localhost:8001/")
 
-            adapter = NanobotAdapter(
-                config_path=str(REPO / "config" / "nanobot.live.json"),
-                surface_path=str(REPO / "results" / "surface.json"),
-                run_id="live",
-                guard_on=guard_on,
-                datamark_on=(defense == "datamarking"),
-                channel=None,
+            self.gate.reset()
+            self.progress.clear()
+
+            profile = TargetProfile.model_validate(
+                json.loads((REPO / "profiles/galaxium.json").read_text(encoding="utf-8"))
+            )
+            profile = profile.model_copy(
+                update={
+                    "nanobot_config": str(REPO / "config/nanobot.live.json"),
+                    "surface": str(REPO / "results/surface.json"),
+                }
+            )
+
+            factory = make_live_factory_from_profile(
+                profile,
+                "live",
                 api_key=key,
                 on_held=self.gate.on_held,
                 await_decision=self.gate.await_decision,
+                on_tool_event=self.progress.append,
             )
 
-            from toolfence.integration.live_factory import _DbBackupAdapter  # type: ignore[attr-defined]
+            dc = DefenseConfig(name=defense, guard_on=guard_on, datamark_on=(defense == "datamarking"))
 
-            wrapped = _DbBackupAdapter(
-                adapter,
-                str(REPO / "targets" / "galaxium" / "booking_system_backend" / "booking.db"),
+            if probe != "":
+                # Attack probe path
+                from toolfence.cli.main import _apply_task_prompt
+
+                probe_entry = profile.attack_probes[int(probe)]
+                if isinstance(probe_entry, str):
+                    probe_path = REPO / probe_entry
+                    task_prompt_override = None
+                else:
+                    probe_path = REPO / probe_entry.path
+                    task_prompt_override = probe_entry.task_prompt
+
+                probe_dict = json.loads(probe_path.read_text(encoding="utf-8"))
+                probe_dict = _apply_task_prompt(probe_dict, profile, task_prompt_override)
+
+                surface = SurfaceFile.model_validate(
+                    json.loads((REPO / "results/surface.json").read_text(encoding="utf-8"))
+                )
+
+                rec = EvaluationRunner(
+                    [(probe_dict, None)],
+                    [],
+                    [dc],
+                    surface_map=surface,
+                    adapter_factory=factory,
+                ).run_attack("live")[0]
+            else:
+                # Free-form path
+                trace = factory(dc, "normal", prompt).run_turn(prompt, defense)
+                rec = TrialRecord(
+                    trial_id="x",
+                    run_id="live",
+                    kind="normal",
+                    channel=None,
+                    defense=defense,
+                    guard_on=guard_on,
+                    probe_id=None,
+                    canary=None,
+                    verdict=None,
+                    task_success=None,
+                    trace=trace,
+                    canary_in_args=False,
+                    cards_shown=0,
+                    task_label="live",
+                )
+
+            utcnow = datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S")
+            trial_id = "live-" + utcnow + "-" + uuid4().hex[:4]
+            rec = rec.model_copy(update={"trial_id": trial_id, "cards_shown": self.gate.held_count})
+
+            live_dir = self.results_dir / "live"
+            live_dir.mkdir(parents=True, exist_ok=True)
+            (live_dir / f"{trial_id}.json").write_text(
+                rec.model_dump_json(indent=2), encoding="utf-8"
             )
 
-            return wrapped.run_turn(prompt, defense).model_dump()
+            return {"trace": rec.trace.model_dump(), "record": rec.model_dump()}
         finally:
             self._busy.release()

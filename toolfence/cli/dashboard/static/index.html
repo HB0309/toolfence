@@ -89,6 +89,12 @@
           <option value="instructional">instructional</option>
         </select>
         <br>
+        <select id="live-probe">
+          <option value="">Your prompt</option>
+          <option value="0">Attack: cancel-user-input</option>
+          <option value="1">Attack: cancel-tool-result</option>
+          <option value="2">Attack: taint-flow-tool-result</option>
+        </select>
         <textarea id="live-prompt" rows="3" maxlength="2000" disabled></textarea>
         <button id="live-send" disabled>Send</button>
         <div id="live-card" class="d-none"><span id="live-card-text"></span>

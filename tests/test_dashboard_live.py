@@ -1,4 +1,4 @@
-"""Tests for L-2: live-mode server endpoints.
+"""Tests for L-2 / L-6b: live-mode server endpoints.
 
 No network, no nanobot.  The server is started on port 0 (kernel assigns a
 free port) and torn down after each test.
@@ -11,8 +11,10 @@ Test inventory
 4. Without live: /api/live/status → {"enabled": false}; POST /api/live/run → 404.
 5. With live: POST /api/live/run with empty key → 400.
 6. check_key monkeypatched → /api/live/key returns its result.
-7. LiveSession.run monkeypatched to {"status": "ok"} → /api/live/run 200 with "trace";
-   key string never appears in caplog.
+7. LiveSession.run monkeypatched → /api/live/run 200; key not in logs.
+8. (L-6b) Free-form run writes one JSON in tmp/live/ that passes TrialRecord.model_validate.
+9. (L-6b) probe "9" → 400.
+10. (L-6b) GET /api/live/pending includes "progress" key.
 """
 from __future__ import annotations
 
@@ -183,13 +185,14 @@ def test_live_run_returns_trace_key_not_logged(monkeypatch, caplog):
 
     secret_key = "sk-or-super-secret-12345"
     fake_trace = {"status": "ok", "tool_calls": []}
+    fake_result = {"trace": fake_trace, "record": {}}
 
     # Patch LiveSession.run on the class so the instance created inside
     # make_server picks it up.
     original_run = LiveSession.run
 
-    def _fake_run(self, key, prompt, guard_on, defense):
-        return fake_trace
+    def _fake_run(self, key, prompt, guard_on, defense, probe=""):
+        return fake_result
 
     monkeypatch.setattr(LiveSession, "run", _fake_run)
 
@@ -203,8 +206,134 @@ def test_live_run_returns_trace_key_not_logged(monkeypatch, caplog):
         assert code == 200
         assert "trace" in body
         assert body["trace"]["status"] == "ok"
+        assert "record" in body
         # The key must never appear in captured log output.
         assert secret_key not in caplog.text
     finally:
         server.shutdown()
         monkeypatch.setattr(LiveSession, "run", original_run)
+
+
+# ---------------------------------------------------------------------------
+# 8. Free-form run writes one JSON in tmp/live/ that passes TrialRecord.model_validate
+# ---------------------------------------------------------------------------
+
+def test_live_run_freeform_writes_valid_trial_record(tmp_path, monkeypatch):
+    """LiveSession.run (free-form) must write a TrialRecord JSON to results_dir/live/."""
+    import datetime
+    from toolfence.contracts.trace import Trace, UsageInfo
+    from toolfence.contracts.trial import TrialRecord
+    import toolfence.cli.dashboard.live as live_mod
+
+    # Build a minimal fake REPO tree so profile loading works without real files.
+    fake_repo = tmp_path / "repo"
+    profiles_dir = fake_repo / "profiles"
+    profiles_dir.mkdir(parents=True)
+    # Minimal galaxium profile JSON (fields validated by TargetProfile)
+    import toolfence.contracts.profile as profile_mod
+    real_profile_cls = profile_mod.TargetProfile
+    # We don't have a real galaxium.json, so redirect REPO to fake_repo and
+    # write a stub profile that make_live_factory_from_profile won't be called with
+    # (we monkeypatch the factory instead).
+    stub_profile_json = {
+        "profile_id": "galaxium-test",
+        "description": "Test stub",
+        "nanobot_config": "config/nanobot.live.json",
+        "surface": "results/surface.json",
+        "state_reset": {"strategy": "none"},
+        "injection": {"strategy": "none"},
+        "agent_persona": "You are a helpful assistant.",
+        "normal_task": {"prompt": "book me a trip", "goal_tool": "get_bookings", "label": "normal"},
+        "attack_probes": [],
+        "tool_result_task_prompt": "Check the reviews.",
+    }
+    (profiles_dir / "galaxium.json").write_text(
+        json.dumps(stub_profile_json), encoding="utf-8"
+    )
+
+    monkeypatch.setattr(live_mod, "REPO", fake_repo)
+
+    fake_trace = Trace(
+        run_id="live",
+        session_key="sess",
+        model="test-model",
+        host="nanobot",
+        timestamp=datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
+        status="ok",
+        final_reply="done",
+        tool_calls=[],
+        usage=UsageInfo(
+            input_tokens=1,
+            output_tokens=1,
+            reasoning_tokens=0,
+            total_tokens=2,
+            generation_ms=10,
+        ),
+    )
+
+    def _fake_factory(dc, channel, probe_text):
+        class _A:
+            def run_turn(self, prompt, defense):
+                return fake_trace
+        return _A()
+
+    monkeypatch.setattr(
+        "toolfence.integration.live_factory.make_live_factory_from_profile",
+        lambda *a, **kw: _fake_factory,
+    )
+    monkeypatch.setattr(
+        "toolfence.integration.live_factory.check_target_health",
+        lambda url: None,
+    )
+
+    session = LiveSession(tmp_path)
+    result = session.run("sk-or-testkey", "book me a trip", True, "none", "")
+
+    # Result dict has both keys
+    assert "trace" in result
+    assert "record" in result
+
+    # One file written under tmp_path/live/
+    live_dir = tmp_path / "live"
+    files = list(live_dir.glob("*.json"))
+    assert len(files) == 1
+
+    # File content passes TrialRecord.model_validate
+    raw = json.loads(files[0].read_text(encoding="utf-8"))
+    rec = TrialRecord.model_validate(raw)
+    assert rec.run_id == "live"
+    assert rec.trial_id.startswith("live-")
+    assert rec.task_label == "live"
+    assert rec.kind == "normal"
+
+
+# ---------------------------------------------------------------------------
+# 9. probe "9" → 400
+# ---------------------------------------------------------------------------
+
+def test_live_run_bad_probe_returns_400():
+    server, base = _start_server(live=True)
+    try:
+        code, _ = _do_post(
+            f"{base}/api/live/run",
+            {"key": "sk-or-testkey", "prompt": "hi", "guard": True, "defense": "none", "probe": "9"},
+        )
+        assert code == 400
+    finally:
+        server.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# 10. GET /api/live/pending includes "progress" key
+# ---------------------------------------------------------------------------
+
+def test_live_pending_includes_progress():
+    server, base = _start_server(live=True)
+    try:
+        status, body = _do_get(f"{base}/api/live/pending")
+        assert status == 200
+        assert "pending" in body
+        assert "progress" in body
+        assert isinstance(body["progress"], list)
+    finally:
+        server.shutdown()

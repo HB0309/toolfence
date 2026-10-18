@@ -30,7 +30,7 @@ const GUARD_COLOR_ON  = '#2FD4FF';
 
 /** Runs whose presence triggers the "default" view filter. */
 // Run names that are excluded from the default view — everything else shows by default.
-const _EXCLUDED_RUNS = new Set(['full', 'narrowed', 'pg8-gate']);
+const _EXCLUDED_RUNS = new Set(['full', 'narrowed', 'pg8-gate', 'live']);
 function _isDefaultRun(name) { return !_EXCLUDED_RUNS.has(name); }
 
 // ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ function _deriveApp(rec) {
   }
   const run = rec._run ?? '';
   if (run.startsWith('fs-'))                      return 'filesystem';
-  if (run.startsWith('galaxium') || run === 'full' || run === 'narrowed' || run === 'pg8-gate') return 'galaxium';
+  if (run.startsWith('galaxium') || run === 'full' || run === 'narrowed' || run === 'pg8-gate' || run === 'live') return 'galaxium';
   return 'unknown';
 }
 
