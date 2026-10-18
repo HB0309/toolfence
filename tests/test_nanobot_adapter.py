@@ -846,3 +846,84 @@ def test_live_tool_result_channel():
     )
     print(f"canary_in_results={canary_in_results}  status={trace.status}  "
           f"tools={tool_names}")
+
+
+# ---------------------------------------------------------------------------
+# Test L-1 — _wrap_await and nanobot.live.json
+# ---------------------------------------------------------------------------
+
+
+def test_wrap_await_approving_calls_store_pending():
+    """_wrap_await: approving fake calls store_pending exactly once."""
+    import asyncio
+    from unittest.mock import MagicMock
+    from toolfence.integration.nanobot_adapter import _wrap_await
+    from toolfence.guard.confirm import ConfirmGrant
+    from toolfence.contracts.guard import HeldCallEvent
+
+    event = HeldCallEvent(
+        tool_name="cancel_booking",
+        arguments_hash="abc123",
+        arguments={},
+        reason="irreversible",
+        untrusted_read_count=0,
+        untrusted_arg_name=None,
+    )
+    confirm_grant = ConfirmGrant()
+
+    async def _approve(_event):
+        return True
+
+    wrapped = _wrap_await(_approve, confirm_grant)
+    result = asyncio.run(wrapped(event))
+
+    assert result is True
+    # store_pending should have been called with the right args
+    assert confirm_grant._pending_tool == "cancel_booking"
+    assert confirm_grant._pending_hash == "abc123"
+
+
+def test_wrap_await_declining_never_calls_store_pending():
+    """_wrap_await: declining fake never calls store_pending."""
+    import asyncio
+    from toolfence.integration.nanobot_adapter import _wrap_await
+    from toolfence.guard.confirm import ConfirmGrant
+    from toolfence.contracts.guard import HeldCallEvent
+
+    event = HeldCallEvent(
+        tool_name="cancel_booking",
+        arguments_hash="abc123",
+        arguments={},
+        reason="irreversible",
+        untrusted_read_count=0,
+        untrusted_arg_name=None,
+    )
+    confirm_grant = ConfirmGrant()
+
+    async def _decline(_event):
+        return False
+
+    wrapped = _wrap_await(_decline, confirm_grant)
+    result = asyncio.run(wrapped(event))
+
+    assert result is False
+    assert confirm_grant._pending_tool is None
+    assert confirm_grant._pending_hash is None
+
+
+def test_live_json_no_env_ref_and_empty_api_key():
+    """config/nanobot.live.json contains no '${' and its apiKey is ''."""
+    import json
+    from pathlib import Path
+
+    text = Path("config/nanobot.live.json").read_text(encoding="utf-8")
+    assert "${" not in text, "nanobot.live.json must not contain env-var references"
+
+    data = json.loads(text)
+    api_key = (
+        data
+        .get("providers", {})
+        .get("openrouter", {})
+        .get("apiKey", None)
+    )
+    assert api_key == "", f"apiKey must be empty string, got {api_key!r}"

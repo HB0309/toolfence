@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 log = logging.getLogger(__name__)
 
@@ -451,6 +451,24 @@ def _error_trace(run_id: str, session_key: str, model: str, timestamp: str, host
 
 
 # ---------------------------------------------------------------------------
+# _wrap_await — wraps an await_decision callable to also call store_pending
+# ---------------------------------------------------------------------------
+
+
+def _wrap_await(
+    fn: Callable[[HeldCallEvent], Awaitable[bool]],
+    confirm_grant: ConfirmGrant,
+) -> Callable[[HeldCallEvent], Awaitable[bool]]:
+    """Wrap *fn* so that an Allow decision also stores the pending grant."""
+    async def _inner(event: HeldCallEvent) -> bool:
+        ok = await fn(event)
+        if ok:
+            confirm_grant.store_pending(event.tool_name, event.arguments_hash)
+        return ok
+    return _inner
+
+
+# ---------------------------------------------------------------------------
 # NanobotAdapter
 # ---------------------------------------------------------------------------
 
@@ -526,6 +544,8 @@ class NanobotAdapter:
         required_tool_prefix: str | None = "mcp_galaxium_",
         agent_persona: str = _DEFAULT_AGENT_PERSONA,
         on_held: Callable[[HeldCallEvent], None] | None = None,
+        api_key: str | None = None,
+        await_decision: Callable[[HeldCallEvent], Awaitable[bool]] | None = None,
     ) -> None:
         self._config_path = config_path
         self._surface_path = surface_path
@@ -547,6 +567,8 @@ class NanobotAdapter:
         self._required_tool_prefix = required_tool_prefix
         self._agent_persona = agent_persona
         self._on_held = on_held
+        self._api_key = api_key
+        self._await_decision = await_decision
         # Keep _galaxium_db_path for backward compat (tests that patch it directly)
         self._galaxium_db_path = galaxium_db_path
 
@@ -659,6 +681,10 @@ class NanobotAdapter:
 
                 runtime_config = _load_runtime_config(self._config_path, workspace)
 
+                # Override OpenRouter API key when running live (never logged).
+                if getattr(self, "_api_key", None):
+                    runtime_config.providers.openrouter.api_key = self._api_key  # type: ignore[attr-defined]
+
                 # Best-effort model name extraction.
                 try:
                     model = runtime_config.agents.defaults.model  # type: ignore[attr-defined]
@@ -726,6 +752,10 @@ class NanobotAdapter:
                     confirm_grant,
                     guard_on=self._guard_on,
                     datamark_on=self._datamark_on,
+                    await_decision=(
+                        _wrap_await(self._await_decision, confirm_grant)
+                        if getattr(self, "_await_decision", None) else None
+                    ),
                 )
 
                 # Sanity check: if a required_tool_prefix is configured, abort if

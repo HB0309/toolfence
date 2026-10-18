@@ -408,3 +408,35 @@ def test_charts_js_references_chart_donuts() -> None:
     """charts.js must reference the ID chart-donuts."""
     src = (_STATIC_DIR / "charts.js").read_text(encoding="utf-8")
     assert "chart-donuts" in src, "charts.js must reference the ID 'chart-donuts'"
+
+
+# ===========================================================================
+# L-3 — live panel tests
+# ===========================================================================
+
+def test_live_panel_ids_in_html() -> None:
+    """index.html must contain all L-3 live panel element IDs."""
+    assert _INDEX.exists(), f"Expected {_INDEX} to exist"
+    html = _INDEX.read_text(encoding="utf-8")
+    required = [
+        "f-live",
+        "live-panel",
+        "live-key",
+        "live-prompt",
+        "live-send",
+        "live-allow",
+        "live-decline",
+    ]
+    missing = [id_ for id_ in required if f'id="{id_}"' not in html]
+    assert not missing, f"index.html is missing L-3 live panel IDs: {missing}"
+
+
+def test_live_js_exists() -> None:
+    """static/live.js must exist."""
+    assert (_STATIC_DIR / "live.js").exists(), "static/live.js not found"
+
+
+def test_live_js_no_local_storage() -> None:
+    """static/live.js must not reference localStorage."""
+    src = (_STATIC_DIR / "live.js").read_text(encoding="utf-8")
+    assert "localStorage" not in src, "live.js must not use localStorage"
