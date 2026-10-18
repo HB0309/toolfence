@@ -1,10 +1,12 @@
-"""Read-only results dashboard server (C-6).
+"""Results dashboard server (C-6).
 
-Serves pre-committed trial records from a results directory.  No model calls,
-no outbound network, no environment variable reads.
+Serves pre-committed trial records from a results directory.  Read-only unless
+``--live`` is passed to ``toolfence serve``, in which case the /api/live/*
+endpoints are enabled.  No model calls, no outbound network (except the key
+check in live mode), no environment variable reads.
 
-Endpoints
----------
+Endpoints (always active)
+--------------------------
 GET /                        → static/index.html
 GET /static/<filename>       → static/<filename>
 GET /api/results             → JSON array of all TrialRecord dicts in results_dir
@@ -12,6 +14,14 @@ GET /api/results?run=<name>  → JSON array from the named subfolder of results_
 GET /api/summary             → ResultSummary.model_dump() aggregated from results_dir
 GET /api/summary?run=<name>  → ResultSummary aggregated from the named subfolder
 GET /api/runs                → sorted list of subfolder names that contain *.json files
+GET /api/live/status         → {"enabled": <bool>}
+
+Live endpoints (only with --live)
+-----------------------------------
+GET  /api/live/pending       → {"pending": <object|null>}
+POST /api/live/key           → {"ok": <bool>, "message": <str>}
+POST /api/live/run           → {"trace": <dict>}
+POST /api/live/decide        → 200 or 409
 
 stdlib only: http.server, json, pathlib, argparse, urllib.parse.
 """
@@ -44,6 +54,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
     # Injected by the server factory before the first request.
     results_dir: Path = Path("results")
+    live_enabled: bool = False
+    live: "object | None" = None  # LiveSession instance when live_enabled is True
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         """Silence the default per-request log to keep stdout clean."""
@@ -66,8 +78,130 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._serve_summary()
         elif path == "/api/runs":
             self._serve_runs()
+        elif path == "/api/live/status":
+            body = json.dumps({"enabled": bool(self.live_enabled)}).encode("utf-8")
+            self._send_json(body)
+        elif path == "/api/live/pending":
+            if not self.live_enabled:
+                self._not_found()
+                return
+            pending = self.live.gate.pending()  # type: ignore[union-attr]
+            progress = list(self.live.progress)  # type: ignore[union-attr]
+            body = json.dumps({"pending": pending, "progress": progress}).encode("utf-8")
+            self._send_json(body)
         else:
             self._not_found()
+
+    def do_POST(self) -> None:  # noqa: N802
+        path = self.path.split("?")[0]
+
+        # All POST /api/live/* routes require live mode.
+        if not path.startswith("/api/live/"):
+            self._not_found()
+            return
+
+        # /api/live/status is GET-only; all other live POSTs need live_enabled.
+        if not self.live_enabled:
+            self._not_found()
+            return
+
+        # Read and parse the request body.
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._bad_request()
+            return
+        if length > 10000:
+            self._bad_request()
+            return
+        raw = self.rfile.read(length) if length > 0 else b""
+        try:
+            body_obj: dict = json.loads(raw) if raw else {}
+        except Exception:  # noqa: BLE001
+            self._bad_request()
+            return
+
+        if path == "/api/live/key":
+            self._handle_live_key(body_obj)
+        elif path == "/api/live/run":
+            self._handle_live_run(body_obj)
+        elif path == "/api/live/decide":
+            self._handle_live_decide(body_obj)
+        else:
+            self._not_found()
+
+    # ------------------------------------------------------------------
+    # Live POST handlers
+    # ------------------------------------------------------------------
+
+    def _handle_live_key(self, body: dict) -> None:
+        from toolfence.cli.dashboard.live import check_key
+
+        key: str = body.get("key", "") or ""
+        if not key.strip():
+            self._bad_request()
+            return
+        ok, message = check_key(key)
+        resp_body = json.dumps({"ok": ok, "message": message}).encode("utf-8")
+        self._send_json(resp_body)
+
+    def _handle_live_run(self, body: dict) -> None:
+        from toolfence.cli.dashboard.live import LiveSession
+
+        key: str = body.get("key", "") or ""
+        prompt: str = body.get("prompt", "") or ""
+        guard = body.get("guard", True)
+        defense: str = body.get("defense", "none") or "none"
+        probe: str = body.get("probe", "") or ""
+
+        if not key.strip():
+            self._bad_request()
+            return
+        if probe not in ("", "0", "1", "2"):
+            self._bad_request()
+            return
+        if probe == "" and not prompt.strip():
+            self._bad_request()
+            return
+        if probe == "" and len(prompt) > 2000:
+            self._bad_request()
+            return
+        if defense not in ("none", "datamarking", "instructional"):
+            self._bad_request()
+            return
+
+        guard_on: bool = bool(guard)
+
+        try:
+            result = self.live.run(key, prompt, guard_on, defense, probe)  # type: ignore[union-attr]
+        except LiveSession.Busy:
+            self.send_response(409)
+            self.end_headers()
+            self.wfile.write(b"Busy")
+            return
+        except RuntimeError as exc:
+            err_body = json.dumps({"error": str(exc)}).encode("utf-8")
+            self.send_response(503)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(err_body)))
+            self.end_headers()
+            self.wfile.write(err_body)
+            return
+
+        resp_body = json.dumps(result).encode("utf-8")
+        self._send_json(resp_body)
+
+    def _handle_live_decide(self, body: dict) -> None:
+        approved = bool(body.get("approved", False))
+        resolved = self.live.gate.decide(approved)  # type: ignore[union-attr]
+        if not resolved:
+            self.send_response(409)
+            self.end_headers()
+            self.wfile.write(b"Nothing pending")
+            return
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
 
     # ------------------------------------------------------------------
     # Helpers
@@ -238,15 +372,29 @@ def _load_records_with_names(results_dir: Path, sub_dir: Path | None = None) -> 
     return pairs
 
 
-def make_server(host: str, port: int, results_dir: Path) -> HTTPServer:
-    """Create and return a configured ``HTTPServer`` (does not start it)."""
+def make_server(
+    host: str,
+    port: int,
+    results_dir: Path,
+    live: bool = False,
+) -> HTTPServer:
+    """Create and return a configured ``HTTPServer`` (does not start it).
 
-    # Bind results_dir into the handler class via a subclass so each request
-    # can find it without global state.
+    When *live* is True a ``LiveSession`` is created and attached to the handler
+    so the /api/live/* endpoints become active.
+    """
+    attrs: dict = {"results_dir": results_dir}
+    if live:
+        from toolfence.cli.dashboard.live import LiveSession
+
+        session = LiveSession(results_dir)
+        attrs["live_enabled"] = True
+        attrs["live"] = session
+
     handler = type(
         "_Handler",
         (_DashboardHandler,),
-        {"results_dir": results_dir},
+        attrs,
     )
     return ThreadingHTTPServer((host, port), handler)
 
@@ -255,12 +403,17 @@ def make_server(host: str, port: int, results_dir: Path) -> HTTPServer:
 # CLI entry point (called from toolfence/cli/main.py serve subcommand)
 # ---------------------------------------------------------------------------
 
-def run_server(host: str = "localhost", port: int = 8080,
-               results_dir: Path = Path("results")) -> None:
+def run_server(
+    host: str = "localhost",
+    port: int = 8080,
+    results_dir: Path = Path("results"),
+    live: bool = False,
+) -> None:
     """Start the dashboard server and block until interrupted."""
     log.info("run_server: starting on http://%s:%d, results_dir=%s", host, port, results_dir.resolve())
-    server = make_server(host, port, results_dir)
-    print(f"ToolFence dashboard listening on http://{host}:{port}")
+    server = make_server(host, port, results_dir, live=live)
+    live_label = " [live mode]" if live else ""
+    print(f"ToolFence dashboard listening on http://{host}:{port}{live_label}")
     print(f"Serving results from: {results_dir.resolve()}")
     print("Press Ctrl-C to stop.")
     try:

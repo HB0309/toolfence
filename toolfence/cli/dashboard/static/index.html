@@ -63,9 +63,44 @@
           <div class="col-auto ms-auto d-flex gap-2 align-items-end">
             <button id="f-reset" class="btn btn-sm btn-outline-secondary">Reset</button>
             <button id="f-share" class="btn btn-sm btn-outline-secondary">Share</button>
+            <button id="f-live" class="btn btn-sm btn-outline-danger">LIVE</button>
           </div>
         </div>
         <div id="filter-chips" class="d-flex flex-wrap gap-1 mt-2"></div>
+      </div>
+    </div>
+
+    <!-- -------------------------------------------------------- -->
+    <!-- Live panel                                               -->
+    <!-- -------------------------------------------------------- -->
+    <div id="live-panel" class="card mb-3 d-none">
+      <div class="card-body">
+        <div id="live-off" class="text-muted">Live mode is off on this host. Open the Codespaces demo from the README.</div>
+        <input id="live-key" type="password" autocomplete="off" placeholder="OpenRouter API key">
+        <button id="live-key-test">Test key</button> <span id="live-key-msg"></span>
+        <br>
+        <select id="live-guard">
+          <option value="true" selected>Guard on</option>
+          <option value="false">Guard off</option>
+        </select>
+        <select id="live-defense">
+          <option value="none">none</option>
+          <option value="datamarking">datamarking</option>
+          <option value="instructional">instructional</option>
+        </select>
+        <br>
+        <select id="live-probe">
+          <option value="">Your prompt</option>
+          <option value="0">Attack: cancel-user-input</option>
+          <option value="1">Attack: cancel-tool-result</option>
+          <option value="2">Attack: taint-flow-tool-result</option>
+        </select>
+        <textarea id="live-prompt" rows="3" maxlength="2000" disabled></textarea>
+        <button id="live-send" disabled>Send</button>
+        <div id="live-card" class="d-none"><span id="live-card-text"></span>
+          <button id="live-allow">Allow</button> <button id="live-decline">Decline</button></div>
+        <pre id="live-out"></pre>
+        <div class="text-muted">Your key stays in this page's memory and is sent only to this server, per request. It is never saved.</div>
       </div>
     </div>
 
@@ -219,6 +254,7 @@
 <script src="static/app.js"></script>
 <script src="static/charts.js"></script>
 <script src="static/explorer.js"></script>
+<script src="static/live.js"></script>
 
 </body>
 </html>

@@ -102,6 +102,8 @@ def main() -> None:
                          help="Port to listen on (default: 8080).")
     serve_p.add_argument("--results-dir", default="results", metavar="DIR",
                          help="Directory of trial record JSON files (default: results/).")
+    serve_p.add_argument("--live", action="store_true",
+                         help="Enable in-page live runs (tester supplies their own OpenRouter key; nothing is stored).")
 
     args = parser.parse_args()
 
@@ -127,7 +129,7 @@ def main() -> None:
     elif args.command == "ci-check":
         _cmd_ci_check(args.surface, args.live)
     elif args.command == "serve":
-        _cmd_serve(args.host, args.port, args.results_dir)
+        _cmd_serve(args.host, args.port, args.results_dir, live=getattr(args, "live", False))
     else:
         print(f"Unknown command: {args.command!r}", file=sys.stderr)
         sys.exit(1)
@@ -554,10 +556,10 @@ def _cmd_report(results_dir: str, *, output_file: str | None = None) -> None:
 # serve (dashboard)
 # ---------------------------------------------------------------------------
 
-def _cmd_serve(host: str, port: int, results_dir: str) -> None:
-    """Start the read-only results dashboard server."""
+def _cmd_serve(host: str, port: int, results_dir: str, live: bool = False) -> None:
+    """Start the results dashboard server (read-only unless --live)."""
     from toolfence.cli.dashboard.server import run_server
-    run_server(host=host, port=port, results_dir=Path(results_dir))
+    run_server(host=host, port=port, results_dir=Path(results_dir), live=live)
 
 
 # ---------------------------------------------------------------------------

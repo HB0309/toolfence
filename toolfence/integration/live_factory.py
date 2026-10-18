@@ -37,11 +37,12 @@ import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Awaitable, Callable
 
 log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from toolfence.contracts.guard import HeldCallEvent
     from toolfence.contracts.profile import TargetProfile
     from toolfence.contracts.trace import Trace
     from toolfence.engine.adapter import AgentAdapter
@@ -304,6 +305,11 @@ def check_target_health(url: str) -> None:
 def make_live_factory_from_profile(
     profile: "TargetProfile",
     run_id: str,
+    *,
+    api_key: str | None = None,
+    on_held: "Callable[[HeldCallEvent], None] | None" = None,
+    await_decision: "Callable[[HeldCallEvent], Awaitable[bool]] | None" = None,
+    on_tool_event: "Callable[[dict], None] | None" = None,
 ) -> "Callable[[DefenseConfig, str, str], AgentAdapter]":
     """Return a per-trial adapter factory driven by *profile*.
 
@@ -336,6 +342,18 @@ def make_live_factory_from_profile(
         Loaded and validated ``TargetProfile``.
     run_id:
         Evaluation run identifier embedded in every ``Trace``.
+    api_key:
+        Optional OpenRouter API key injected into the nanobot config at runtime.
+        Defaults to None (batch evaluation behaviour unchanged).
+    on_held:
+        Optional callback invoked when a Guard hold card is shown.
+        Defaults to None.
+    await_decision:
+        Optional async callable that awaits a user allow/decline decision for a
+        held call.  Defaults to None.
+    on_tool_event:
+        Optional callback invoked after each tool event with a dict containing
+        ``name`` and ``guard_decision``.  Defaults to None.
     """
     # Resolve workdir_abs once — used for WORKDIR_PLACEHOLDER substitution in the
     # nanobot config and for {{WORKDIR}} expansion in prompts/probe text at
@@ -394,6 +412,10 @@ def make_live_factory_from_profile(
             injection_id_column=injection_id_column,
             required_tool_prefix=profile.required_tool_prefix,
             agent_persona=profile.agent_persona,
+            api_key=api_key,
+            on_held=on_held,
+            await_decision=await_decision,
+            on_tool_event=on_tool_event,
         )
 
         # --- Wrap with state-reset adapter ---
