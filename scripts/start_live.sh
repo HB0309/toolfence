@@ -14,5 +14,5 @@ for _ in $(seq 1 90); do
   sleep 2
 done
 
-setsid nohup "$ROOT/.venv-live/bin/toolfence" serve --host 0.0.0.0 --port 8080 --live > /tmp/dashboard.log 2>&1 &
+(PYTHONUNBUFFERED=1 setsid nohup "$ROOT/.venv-live/bin/toolfence" serve --host 0.0.0.0 --port 8080 --live > /tmp/dashboard.log 2>&1 &)
 echo "ToolFence dashboard starting on port 8080 (logs: /tmp/java.log /tmp/galaxium.log /tmp/dashboard.log)"
