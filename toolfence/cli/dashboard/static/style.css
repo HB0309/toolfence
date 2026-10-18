@@ -204,3 +204,6 @@ body {
 #trial-table .tabulator-header .tabulator-col input { background: #0A0F18; border: 1px solid rgba(47,212,255,.15); color: #C9D1D9; border-radius: 4px; }
 #trial-table .tabulator-footer { background: #0E1522 !important; border-top: 1px solid rgba(47,212,255,.12) !important; color: #8B949E; }
 #trial-table { border: 1px solid rgba(47,212,255,.12) !important; border-radius: 6px; overflow: hidden; }
+
+/* Trial detail: grey tags had grey text on a grey background */
+.badge.bg-secondary { background: #2A3342 !important; color: #C9D1D9 !important; }
