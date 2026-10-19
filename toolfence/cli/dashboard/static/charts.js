@@ -443,6 +443,8 @@ function _renderHeatmap(recs) {
       type: 'heatmap',
       data: cellData.map(d => ({
         value: d.value,
+        total: d.total,
+        leaked: d.leaked,
         // null values get gray styling via itemStyle
         itemStyle: d.total === 0 ? { color: '#161B22', borderColor: '#0D1117', borderWidth: 2 } : { borderColor: '#0D1117', borderWidth: 2 },
         label: { show: true, formatter: () => d.label_, color: _TEXT_COLOR, fontSize: 11 },
