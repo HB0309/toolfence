@@ -1,5 +1,7 @@
 # ToolFence
 
+![ToolFence](docs/img/thumbnail.png)
+
 **ToolFence checks whether an AI agent should make the tool call it is about to make, and measures how often it gets that wrong.**
 
 AI agents act through tools. They search, book, write files, cancel. When an agent reads text someone else wrote (a review, a file, a support ticket), it can't reliably tell that text apart from an instruction. That text can steer the agent into tool calls the user never asked for. This is indirect prompt injection.
@@ -8,11 +10,22 @@ Per-tool permissions don't stop it. The tools are trusted and enabled on purpose
 
 Built for the AngelHack × IBM "Building with IBM Bob" hackathon.
 
+## Submission
+
+- **Demo video (2:58):** [https://youtu.be/R63BXW3asjg](https://youtu.be/R63BXW3asjg)
+- **Pitch deck:** [docs/ToolFence-deck.pdf](docs/ToolFence-deck.pdf)
+- **Live demo:** [https://toolfence-dashboard.2g457ha8n8w8.us-east.codeengine.appdomain.cloud](https://toolfence-dashboard.2g457ha8n8w8.us-east.codeengine.appdomain.cloud)
+- **Track:** Theme 1, Students / Early Career ("Explore, Fix, and Build")
+- **Tech stack:** IBM Bob (custom Auditor mode, skill, MCP server), IBM Granite 4.2 8B, IBM Cloud Code Engine, IBM Galaxium Travels, Python 3.12, Pydantic v2, MCP, nanobot, OpenRouter, ECharts / Tabler / Tabulator, GitHub Actions, GitHub Codespaces, Docker
+- **Improvements made:** new project built during the hacking period. Galaxium Travels (IBM) and nanobot are pre-existing open-source testing grounds; our changes to Galaxium (tool narrowing, booking ownership checks) are patch files in `targets/galaxium-patches/`.
+
 ---
 
 
 
 ## Try it
+
+![View the results on IBM Cloud](docs/img/CardDashboard.png)![Run it live in GitHub Codespaces](docs/img/CardCodespaces.png)
 
 
 |                      | Link                                                                                                                                                                                   | What you get                                                                                                                                                                   |
@@ -190,4 +203,4 @@ All of ToolFence's code, tests and configuration were planned and written with I
 
 ## Disclosure
 
-Planning, design review, code auditing and result analysis were assisted by Claude (Anthropic). Claude also drafted this README. All other application code, tests and configuration were built with IBM Bob; see `bob_sessions/`.
+Planning and result analysis were assisted by Claude (Anthropic). All other application code, tests and configuration were built with IBM Bob; see `bob_sessions/`. The demo video's narration was generated with Microsoft neural text-to-speech (en-US-Brian).
